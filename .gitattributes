@@ -1,0 +1,2 @@
+# 对所有 .sh 脚本强制用 LF
+*.sh text eol=lf

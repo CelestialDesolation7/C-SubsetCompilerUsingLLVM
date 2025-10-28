@@ -1,0 +1,101 @@
+# ========================
+# Build directories
+# ========================
+build/
+bin/
+obj/
+
+# ========================
+# Editor / IDE directories
+# ========================
+.vscode/
+.vs/
+
+# ========================
+# Visual Studio
+# ========================
+# Build configurations
+[Dd]ebug/
+[Rr]elease/
+# Solution and project user files
+*.suo
+*.user
+*.opensdf
+*.sdf
+*.vcxproj*
+*.vcxproj.filters
+*.vcxproj.user
+*.vspscc
+*.vssscc
+
+# ========================
+# Compiled Object files & Assembly
+# ========================
+*.o
+*.obj
+*.lo
+*.slo
+
+# ========================
+# Precompiled Headers
+# ========================
+*.gch
+*.pch
+
+# ========================
+# Libraries
+# ========================
+# Static
+*.a
+*.lib
+*.lai
+*.la
+# Dynamic
+*.so
+*.dylib
+*.dll
+
+# ========================
+# Linker / Debugger files
+# ========================
+*.ilk
+*.pdb
+*.dwo
+
+# ========================
+# Executables
+# ========================
+*.exe
+*.out
+*.app
+
+# ========================
+# Fortran modules
+# ========================
+*.mod
+*.smod
+
+# ========================
+# Intermediate representations
+# ========================
+*.ll
+*.s
+
+# Generated assembly and IR directories
+asm/
+ir/
+
+# ========================
+# Logs, caches, temp
+# ========================
+*.log
+*.tmp
+*.cache
+*.txt
+[Tt]mp/
+
+# ========================
+# Package directories
+# ========================
+packages/
+PLCproject.sln
