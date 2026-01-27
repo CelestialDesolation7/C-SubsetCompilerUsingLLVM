@@ -1,18 +1,5 @@
 # ToyC - C 语言子集编译器
 
-<div align="center">
-
-**一个功能完整的 C 子集编译器，支持编译到 LLVM IR 和 RISC-V 汇编**
-
-![C++](https://img.shields.io/badge/C++-20-blue.svg)
-![RISC-V](https://img.shields.io/badge/RISC--V-RV32I-green.svg)
-![LLVM](https://img.shields.io/badge/LLVM-IR-orange.svg)
-![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)
-
-</div>
-
----
-
 ## 📖 目录
 
 - [项目简介](#项目简介)
@@ -48,7 +35,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 
 ## 核心技术与亮点
 
-### 🎯 1. 完整的编译器前端
+### 1. 完整的编译器前端
 
 #### 词法分析器 (Lexer)
 - **手工实现**的高效词法分析器
@@ -67,7 +54,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - 支持语法树可视化输出
 - 类型检查和语义分析
 
-### 🚀 2. LLVM IR 代码生成
+### 2. LLVM IR 代码生成
 
 - **SSA 形式**的中间代码生成
 - 支持 phi 节点自动插入
@@ -76,7 +63,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - 函数调用约定实现
 - **短路求值**优化（逻辑运算符 `&&`, `||`）
 
-### ⚡ 3. 寄存器分配算法
+### 3. 寄存器分配算法
 
 实现了经典的 **线性扫描寄存器分配算法** (Linear Scan Register Allocation)：
 
@@ -96,7 +83,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 
 详细算法说明见：[docs/线性扫描算法核心思路.md](docs/线性扫描算法核心思路.md)
 
-### 🔧 4. RISC-V 代码生成
+### 4. RISC-V 代码生成
 
 #### 支持的指令集
 - **算术运算**: `add`, `sub`, `mul`, `div`, `rem`
@@ -113,7 +100,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - 栈指针：`sp`
 - 帧指针：`s0`（可选）
 
-### 🎨 5. 多种输出模式
+### 5. 多种输出模式
 
 支持灵活的编译输出：
 - **AST**: 树形结构可视化
@@ -271,23 +258,33 @@ make test TEST_SRC_DIR=path/to/your/test/folder
 
 # 例如
 make test TEST_SRC_DIR=examples/multi_func
-make test TEST_SRC_DIR=examples/single_func
 ```
 
 ### 仅生成汇编或 IR
 
 ```bash
-# 仅汇编（默认目录）
-bash scripts/generate_asm.sh
+# 仅汇编
+bash scripts/generate_asm.sh [source_dir]
 
-# 仅汇编（自定义目录）
+# 仅 IR
+bash scripts/generate_ir.sh [source_dir]
+
+# 示例
 bash scripts/generate_asm.sh examples/single_func
+```
 
-# 仅 IR（默认目录）
-bash scripts/generate_ir.sh
+### 验证输出结果
 
-# 仅 IR（自定义目录）
-bash scripts/generate_ir.sh examples/multi_func
+```bash
+# 验证默认目录
+make verify
+
+# 验证自定义目录
+make verify TEST_SRC_DIR=<your_directory>
+
+# 示例
+make verify TEST_SRC_DIR=examples/single_func
+make verify TEST_SRC_DIR=examples/multi_func
 ```
 
 ### 清理输出
@@ -300,382 +297,42 @@ make clean
 rm -rf test/asm test/ir
 ```
 
-### 验证输出正确性
+### 输出位置
 
-**自动编译并运行生成的汇编代码，对比 ToyC 和 Clang 的执行结果**：
+无论测试哪个目录，输出都统一在 `test/` 目录下：
 
-```bash
-# 验证默认目录
-make verify
-
-# 验证自定义目录
-make verify TEST_SRC_DIR=examples/single_func
 ```
-
-**验证流程**：
-1. 自动调用 `make test` 生成汇编代码
-2. 使用 RISC-V GCC 将 ToyC 和 Clang 的汇编编译为可执行文件
-3. 使用 QEMU 用户模式运行可执行文件
-4. 对比两者的退出码和输出
-5. 显示 ✅ 结果正确 或 ❌ 结果错误
-
-**环境要求**（verify 功能）：
-- `riscv32-unknown-elf-gcc` 或 `riscv64-unknown-elf-gcc`: RISC-V 交叉编译器
-- `qemu-riscv32` 或 `qemu-riscv64`: QEMU RISC-V 用户模式模拟器
-
-**安装方法**：
-```bash
-# Ubuntu/Debian
-sudo apt install gcc-riscv64-unknown-elf qemu-user
-
-# 注意：脚本会自动检测并使用可用的工具链
-# riscv64 工具链也可以编译 RV32 代码
-```
-
-**输出示例**：
-```
-=========================================
-  ToyC Compiler Output Verification
-=========================================
-─────────────────────────────────────────
-Testing: 01_minimal
-  Clang  exit code: 0
-  ToyC   exit code: 0
-  ✅ Result: CORRECT
-─────────────────────────────────────────
-Testing: 05_function_call
-  Clang  exit code: 30
-  ToyC   exit code: 30
-  ✅ Result: CORRECT
-=========================================
-  Verification Summary
-=========================================
-Total tests:  15
-Passed:       15 ✅
-Failed:       0 ❌
-
-🎉 All tests passed!
+test/
+├── asm/          # 汇编输出
+│   ├── <file1>_toyc.s
+│   ├── <file1>_clang.s
+│   └── ...
+└── ir/           # IR 输出
+    ├── <file1>_toyc.ll
+    ├── <file1>_clang.ll
+    └── ...
 ```
 
 ---
 
-## 输出示例
+## 测试用例说明
 
-### 输入代码 (examples/compiler_inputs/05_function_call.c)
+当前项目包含以下测试用例（位于 `examples/compiler_inputs/`）：
 
-```c
-int add(int a, int b) {
-    return a + b;
-}
-
-int main() {
-    int x = 10;
-    int y = 20;
-    int result = add(x, y);
-    return result;
-}
-```
-
-### AST 输出
-
-```
-=== Abstract Syntax Tree ===
-Function int add(int a, int b)
-  Block
-    Return
-      Binary(+)
-        Identifier(a)
-        Identifier(b)
-
-Function int main()
-  Block
-    Decl(x)
-      Number(10)
-    Decl(y)
-      Number(20)
-    Decl(result)
-      Call(add)
-        Identifier(x)
-        Identifier(y)
-    Return
-      Identifier(result)
-```
-
-### LLVM IR 输出
-
-```llvm
-; ModuleID = 'toyc'
-source_filename = "toyc"
-
-define i32 @add(i32 %a, i32 %b) {
-entry:
-  %a_addr = alloca i32
-  store i32 %a, i32* %a_addr
-  %b_addr = alloca i32
-  store i32 %b, i32* %b_addr
-  %t0 = load i32, i32* %a_addr
-  %t1 = load i32, i32* %b_addr
-  %t2 = add i32 %t0, %t1
-  ret i32 %t2
-}
-
-define i32 @main() {
-entry:
-  %x_addr = alloca i32
-  store i32 10, i32* %x_addr
-  %y_addr = alloca i32
-  store i32 20, i32* %y_addr
-  %result_addr = alloca i32
-  %t0 = load i32, i32* %x_addr
-  %t1 = load i32, i32* %y_addr
-  %t2 = call i32 @add(i32 %t0, i32 %t1)
-  store i32 %t2, i32* %result_addr
-  %t3 = load i32, i32* %result_addr
-  ret i32 %t3
-}
-```
-
-### RISC-V 汇编输出
-
-```asm
-	.text
-	.globl	add
-	.type	add, @function
-add:
-	addi	sp, sp, -16
-	sw	ra, 12(sp)
-	sw	s0, 8(sp)
-	addi	s0, sp, 16
-	# 参数 a 在 a0, b 在 a1
-	add	a0, a0, a1
-	lw	ra, 12(sp)
-	lw	s0, 8(sp)
-	addi	sp, sp, 16
-	ret
-
-	.globl	main
-	.type	main, @function
-main:
-	addi	sp, sp, -32
-	sw	ra, 28(sp)
-	sw	s0, 24(sp)
-	addi	s0, sp, 32
-	# x = 10
-	li	t0, 10
-	sw	t0, -12(s0)
-	# y = 20
-	li	t1, 20
-	sw	t1, -16(s0)
-	# call add(x, y)
-	lw	a0, -12(s0)
-	lw	a1, -16(s0)
-	call	add
-	# result = return value
-	sw	a0, -20(s0)
-	lw	a0, -20(s0)
-	lw	ra, 28(sp)
-	lw	s0, 24(sp)
-	addi	sp, sp, 32
-	ret
-```
-
----
-
-## 项目结构
-
-```
-C-SubsetCompilerUsingLLVM/
-├── src/                       # 源代码
-│   ├── main.cpp              # 主程序入口
-│   ├── lexer.cpp             # 词法分析器
-│   ├── parser.cpp            # 语法分析器
-│   ├── ast.cpp               # AST 节点实现
-│   ├── llvm_ir.cpp           # LLVM IR 生成器
-│   ├── riscv_gen.cpp         # RISC-V 代码生成器
-│   ├── ra_linear_scan.cpp    # 线性扫描寄存器分配
-│   └── include/              # 头文件
-│       ├── lexer.h
-│       ├── parser.h
-│       ├── ast.h
-│       ├── llvm_ir.h
-│       ├── riscv_gen.h
-│       └── ra_linear_scan.h
-├── examples/                  # 测试用例
-│   ├── compiler_inputs/      # 基础测试集（15个用例）
-│   │   ├── 01_minimal.c
-│   │   ├── 02_assignment.c
-│   │   ├── 03_if_else.c
-│   │   └── ...
-│   ├── single_func/          # 单函数测试
-│   └── multi_func/           # 多函数测试
-├── scripts/                   # 测试脚本
-│   ├── generate_asm.sh       # 批量生成汇编
-│   ├── generate_ir.sh        # 批量生成 IR
-│   └── test_instr.sh         # 指令测试
-├── docs/                      # 文档
-│   ├── 测试指南.md
-│   ├── 线性扫描算法核心思路.md
-│   └── Debug_Guide_Instr.md
-├── test/                      # 测试输出目录
-│   ├── asm/                  # 汇编输出
-│   └── ir/                   # IR 输出
-├── build/                     # 构建产物
-├── Makefile                   # 构建脚本
-├── README.md                  # 本文件
-└── toyc                       # 编译器可执行文件（构建后）
-```
-
----
-
-## 技术文档
-
-### 📚 详细文档
-
-- **[测试指南](docs/测试指南.md)** - 完整的测试说明和常见问题
-- **[线性扫描算法](docs/线性扫描算法核心思路.md)** - 寄存器分配算法详解
-- **[指令调试指南](docs/Debug_Guide_Instr.md)** - 汇编代码调试方法
-
-### 测试用例说明
-
-| 测试文件 | 测试功能 | 难度 |
-|---------|---------|------|
-| `01_minimal.c` | 空 main 函数 | ⭐ |
-| `02_assignment.c` | 变量声明和赋值 | ⭐ |
-| `03_if_else.c` | 条件分支 | ⭐⭐ |
-| `04_while_break.c` | 循环和 break | ⭐⭐ |
-| `05_function_call.c` | 函数调用 | ⭐⭐ |
-| `06_continue.c` | continue 语句 | ⭐⭐ |
-| `07_scope_shadow.c` | 作用域和遮蔽 | ⭐⭐⭐ |
-| `08_short_circuit.c` | 短路求值 | ⭐⭐⭐ |
-| `09_recursion.c` | 递归（斐波那契） | ⭐⭐⭐ |
-| `10_void_fn.c` | void 函数 | ⭐⭐ |
-| `11_precedence.c` | 运算符优先级 | ⭐⭐ |
-| `12_division_check.c` | 除法和取模 | ⭐⭐ |
-| `13_scope_block.c` | 块级作用域 | ⭐⭐⭐ |
-| `14_nested_if_while.c` | 嵌套控制流 | ⭐⭐⭐ |
-| `15_multiple_return_paths.c` | 多返回路径 | ⭐⭐⭐ |
-
----
-
-## 常见问题 FAQ
-
-### Q1: 如何添加新的测试用例？
-
-将 `.c` 文件放到任意目录，然后运行：
-```bash
-make test TEST_SRC_DIR=your/custom/directory
-```
-
-### Q2: 如何对比 ToyC 和 Clang 的输出？
-
-```bash
-# 运行测试后
-diff test/asm/01_minimal_toyc.s test/asm/01_minimal_clang.s
-
-# 或使用可视化对比工具
-code --diff test/asm/01_minimal_toyc.s test/asm/01_minimal_clang.s
-```
-
-### Q3: 编译时出现警告怎么办？
-
-项目已修复主要的编译警告。如果仍有警告，请确保：
-- g++ 版本支持 C++20 (`g++ --version`)
-- 使用 `-Wall` 编译选项
-- 检查是否有未使用的变量或不匹配的类型
-
-### Q4: 支持哪些 RISC-V 指令？
-
-目前支持 **RV32I 基础整数指令集**，包括：
-- **算术**: add, sub, mul, div, rem
-- **逻辑**: and, or, xor, slt
-- **分支**: beq, bne, blt, bge
-- **跳转**: j, jal, jalr, ret
-- **内存**: lw, sw
-- **立即数**: li, addi
-
-### Q5: 如何调试生成的汇编代码？
-
-参考 [docs/Debug_Guide_Instr.md](docs/Debug_Guide_Instr.md) 获取详细的调试方法，包括：
-- 使用 RISC-V 模拟器
-- GDB 调试技巧
-- 常见错误排查
-
-### Q6: 性能如何？
-
-- **编译速度**: 单文件 < 100ms
-- **寄存器分配**: O(n log n) 时间复杂度
-- **输出质量**: 接近 Clang -O0 级别（未优化）
-
-### Q7: 测试脚本跳过 clang 或 riscv-gcc 怎么办？
-
-这些是**可选工具**，仅用于生成对比输出：
-- 没有 `clang`: 会跳过 Clang 对比输出（不影响 ToyC 测试）
-- 没有 `riscv32-unknown-elf-gcc`: 会跳过 RISC-V GCC 输出
-
-ToyC 本身的测试不受影响。
-
----
-
-## 开发计划
-
-### ✅ 已实现
-- [x] 完整的 C 子集前端
-- [x] LLVM IR 生成（SSA 形式）
-- [x] 线性扫描寄存器分配
-- [x] RISC-V 汇编生成
-- [x] 函数调用和递归
-- [x] 短路求值优化
-- [x] 批量测试框架
-
-### 🚧 进行中
-- [ ] 数组支持
-- [ ] 指针支持
-- [ ] 更多数据类型（char, long）
-
-### 📋 计划中
-- [ ] 代码优化 Pass
-  - [ ] 死代码消除
-  - [ ] 常量传播
-  - [ ] 公共子表达式消除
-- [ ] 更多目标架构（x86-64, ARM）
-- [ ] 调试信息生成（DWARF）
-
----
-
-## 致谢与参考
-
-### 理论基础
-- **Engineering a Compiler** - Keith Cooper & Linda Torczon
-- **Modern Compiler Implementation in C** - Andrew W. Appel
-- **Compilers: Principles, Techniques, and Tools** - Aho, Lam, Sethi, Ullman
-
-### 技术参考
-- **LLVM Project** - IR 格式和优化技术
-- **RISC-V Foundation** - 指令集规范和 ABI 约定
-- **Linear Scan Register Allocation** - Massimiliano Poletto & Vivek Sarkar
-
-### 开源项目
-- **TinyC Compiler** - 简洁的 C 编译器实现
-- **LLVM Tutorial** - LLVM 官方教程
-
----
-
-## 许可证
-
-本项目为**教学项目**，仅用于学习编译器原理、LLVM 技术和 RISC-V 架构。
-
-代码遵循 MIT 许可证，可自由用于学习和研究。
-
----
-
-<div align="center">
-
-**Happy Compiling! 🚀**
-
-如有问题或建议，欢迎提交 Issue 或 Pull Request
-
----
-
-**项目亮点**: 完整前端 | SSA-IR | 线性扫描 | RISC-V 汇编 | 工业级实现
-
-</div>
+| 文件                         | 测试功能            |
+| ---------------------------- | ------------------- |
+| `01_minimal.c`               | 最小程序（空 main） |
+| `02_assignment.c`            | 变量赋值            |
+| `03_if_else.c`               | if-else 条件语句    |
+| `04_while_break.c`           | while 循环和 break  |
+| `05_function_call.c`         | 函数调用            |
+| `06_continue.c`              | continue 语句       |
+| `07_scope_shadow.c`          | 作用域和变量遮蔽    |
+| `08_short_circuit.c`         | 逻辑短路求值        |
+| `09_recursion.c`             | 递归函数            |
+| `10_void_fn.c`               | void 函数           |
+| `11_precedence.c`            | 运算符优先级        |
+| `12_division_check.c`        | 除法检查            |
+| `13_scope_block.c`           | 块作用域            |
+| `14_nested_if_while.c`       | 嵌套控制流          |
+| `15_multiple_return_paths.c` | 多返回路径          |
