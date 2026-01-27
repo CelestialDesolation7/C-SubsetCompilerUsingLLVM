@@ -4,6 +4,7 @@
 build/
 bin/
 obj/
+test/verify_temp
 
 # ========================
 # Editor / IDE directories
