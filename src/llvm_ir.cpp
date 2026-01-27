@@ -128,7 +128,7 @@ std::string LLVMIRGenerator::generateFunction(const std::shared_ptr<FuncDef> &fu
     // 函数声明
     std::string retType = (funcDef->retType == "void") ? "void" : "i32";
     // std::string funcAttrs = isMainFunction ? "dso_local" : "";
-    ir += string("define ") + "dso_local" + " " + retType + " @" + funcDef->name + "(" + generateParams(funcDef->params) + ") #0 {\n";
+    ir += std::string("define ") + "dso_local" + " " + retType + " @" + funcDef->name + "(" + generateParams(funcDef->params) + ") #0 {\n";
 
     blockLabels.push_back("0");
 

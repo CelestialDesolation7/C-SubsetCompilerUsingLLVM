@@ -177,5 +177,5 @@ Token Lexer::nextToken()
     }
 
     // 其他未识别字符
-    return {TokenType::UNKNOWN, string(1, c), line};
+    return {TokenType::UNKNOWN, std::string(1, c), line};
 }

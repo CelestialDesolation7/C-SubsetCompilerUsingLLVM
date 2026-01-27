@@ -88,7 +88,7 @@ void runSingleTest(const TestCase &testCase)
     auto regInfo = RegInfo();
     *g_output << "\n--- 寄存器信息 ---" << std::endl;
     *g_output << "总物理寄存器数: " << regInfo.physRegs.size() << std::endl;
-    *g_output << "可分配寄存器数: " << regInfo.numPhysRegs(RegClass::GPR) << std::endl;
+    *g_output << "可分配寄存器数: " << regInfo.allocatableRegs.size() << std::endl;
 
     LinearScanAllocator allocator(regInfo);
     allocator.setDebugMode(true);
@@ -141,13 +141,13 @@ void runSingleTest(const TestCase &testCase)
             *g_output << "%" << vreg << " ";
         }
         *g_output << std::endl;
-        *g_output << std::(60, '=') << std::endl;
+        *g_output << std::string(60, '=') << std::endl;
     }
 
     // 输出分配结果
     *g_output << "\n--- 分配结果统计 ---" << std::endl;
     *g_output << "总虚拟寄存器数: " << result.vregToPhys.size() << std::endl;
-    *g_output << "溢出槽数量: " << result.spillSlotCount << std::endl;
+    *g_output << "溢出槽数量: " << result.vregToStack.size() << std::endl;
 
     int physRegCount = 0;
     int spillCount = 0;
@@ -180,7 +180,8 @@ void runSingleTest(const TestCase &testCase)
         }
         else
         {
-            int spillSlot = result.getStackSlot(vreg);
+            auto it = result.vregToStack.find(vreg);
+            int spillSlot = (it != result.vregToStack.end()) ? it->second : -1;
             *g_output << "%" << vreg << " -> 栈槽" << spillSlot << std::endl;
         }
     }
@@ -189,8 +190,8 @@ void runSingleTest(const TestCase &testCase)
 void runCustomTest()
 {
     std::cout << "\n请输入自定义LLVM IR (输入一行END结束):" << std::endl;
-    std:: customIR;
-    std:: line;
+    std::string customIR;
+    std::string line;
 
     while (std::getline(std::cin, line))
     {

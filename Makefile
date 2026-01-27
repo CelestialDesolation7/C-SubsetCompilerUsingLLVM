@@ -36,6 +36,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET) $(UNIFIED_TEST_TARGET)
+	rm -rf test
 
 # 默认测试目录
 TEST_SRC_DIR ?= examples/compiler_inputs
