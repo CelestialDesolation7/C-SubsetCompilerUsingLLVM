@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # 结果验证脚本：编译运行 ToyC 和 Clang 生成的汇编，对比输出结果
+# 使用 Clang 作为汇编器和链接器
 
 set -eu
 if [[ -n "${BASH_VERSION:-}" ]]; then
@@ -24,28 +25,53 @@ if [[ ! -d "$ASM_DIR" ]]; then
   exit 1
 fi
 
-# 检查 RISC-V 工具链（支持 32 位和 64 位）
-RISCV_GCC=""
-RISCV_ARCH=""
-RISCV_ABI=""
+# Clang 目标三元组和架构参数
+CLANG_TARGET="riscv32-unknown-elf"
+CLANG_ARCH="rv32im"
+CLANG_ABI="ilp32"
 
-if command -v riscv32-unknown-elf-gcc >/dev/null 2>&1; then
-  RISCV_GCC="riscv32-unknown-elf-gcc"
-  RISCV_ARCH="rv32im"
-  RISCV_ABI="ilp32"
-elif command -v riscv64-unknown-elf-gcc >/dev/null 2>&1; then
-  RISCV_GCC="riscv64-unknown-elf-gcc"
-  RISCV_ARCH="rv32im"
-  RISCV_ABI="ilp32"
-  echo "Note: Using riscv64-unknown-elf-gcc for RV32 compilation"
-else
-  echo "Error: RISC-V GCC not found"
-  echo "Please install RISC-V toolchain to verify outputs"
+# 检查 Clang 是否存在
+if ! command -v clang >/dev/null 2>&1; then
+  echo "Error: Clang not found"
+  echo "Please install Clang to verify outputs"
   echo ""
   echo "Installation guide:"
-  echo "  Ubuntu/Debian: sudo apt install gcc-riscv64-unknown-elf"
-  echo "  Or build from: https://github.com/riscv/riscv-gnu-toolchain"
+  echo "  Ubuntu/Debian: sudo apt install clang"
   exit 1
+fi
+
+# 检查 Clang 是否支持 RISC-V 目标
+if ! clang --target=$CLANG_TARGET -march=$CLANG_ARCH -mabi=$CLANG_ABI -c -x assembler /dev/null -o /dev/null 2>/dev/null; then
+  echo "Error: Clang does not support RISC-V target"
+  echo "Your Clang may not have RISC-V backend enabled"
+  echo ""
+  echo "Try installing a full LLVM toolchain or use a version with RISC-V support"
+  exit 1
+fi
+
+echo "Note: Using Clang with --target=$CLANG_TARGET"
+
+# 查找 libgcc（提供软件除法等内置函数）
+# 使用 riscv64-unknown-elf-gcc 获取 rv32im/ilp32 的 libgcc 路径
+LIBGCC_PATH=""
+if command -v riscv64-unknown-elf-gcc >/dev/null 2>&1; then
+  LIBGCC_PATH=$(riscv64-unknown-elf-gcc -march=$CLANG_ARCH -mabi=$CLANG_ABI -print-libgcc-file-name 2>/dev/null || true)
+  if [[ -n "$LIBGCC_PATH" ]] && [[ -f "$LIBGCC_PATH" ]]; then
+    echo "Note: Using libgcc from $LIBGCC_PATH"
+  else
+    LIBGCC_PATH=""
+  fi
+elif command -v riscv32-unknown-elf-gcc >/dev/null 2>&1; then
+  LIBGCC_PATH=$(riscv32-unknown-elf-gcc -march=$CLANG_ARCH -mabi=$CLANG_ABI -print-libgcc-file-name 2>/dev/null || true)
+  if [[ -n "$LIBGCC_PATH" ]] && [[ -f "$LIBGCC_PATH" ]]; then
+    echo "Note: Using libgcc from $LIBGCC_PATH"
+  else
+    LIBGCC_PATH=""
+  fi
+fi
+
+if [[ -z "$LIBGCC_PATH" ]]; then
+  echo "Warning: libgcc not found, some tests with division may fail"
 fi
 
 # 检查 QEMU RISC-V 用户模式
@@ -85,8 +111,9 @@ fi
 
 # 编译启动文件
 CRT0_OBJ="$TEMP_DIR/crt0.o"
-if ! $RISCV_GCC -march=$RISCV_ARCH -mabi=$RISCV_ABI -c "$CRT0_FILE" -o "$CRT0_OBJ" 2>/dev/null; then
-  echo "Error: Failed to compile startup file"
+if ! clang --target=$CLANG_TARGET -march=$CLANG_ARCH -mabi=$CLANG_ABI \
+     -c "$CRT0_FILE" -o "$CRT0_OBJ" 2>/dev/null; then
+  echo "Error: Failed to compile startup file with Clang"
   exit 1
 fi
 
@@ -100,7 +127,7 @@ echo "  ToyC Compiler Output Verification"
 echo "========================================="
 echo "Source directory: $SRC_DIR"
 echo "Assembly directory: $ASM_DIR"
-echo "RISC-V GCC: $RISCV_GCC"
+echo "Compiler: clang --target=$CLANG_TARGET"
 echo "QEMU command: $QEMU_CMD"
 echo ""
 
@@ -131,23 +158,26 @@ for c_file in "$SRC_DIR"/*.c; do
   echo "─────────────────────────────────────────"
   echo "Testing: $base"
   
-  # 编译 ToyC 生成的汇编（使用 -nostdlib 和自定义启动代码，添加 -lgcc 支持软件除法）
+  # 构建链接参数（如果有 libgcc 则添加）
+  LINK_LIBS=""
+  if [[ -n "$LIBGCC_PATH" ]]; then
+    LINK_LIBS="$LIBGCC_PATH"
+  fi
+  
+  # 编译 ToyC 生成的汇编（使用 Clang + -nostdlib + 自定义启动代码）
   toyc_exe="$TEMP_DIR/${base}_toyc"
-  if ! $RISCV_GCC -march=$RISCV_ARCH -mabi=$RISCV_ABI -nostdlib \
-       "$CRT0_OBJ" "$toyc_asm" -o "$toyc_exe" -lgcc 2>/dev/null; then
+  if ! clang --target=$CLANG_TARGET -march=$CLANG_ARCH -mabi=$CLANG_ABI \
+       -nostdlib "$CRT0_OBJ" "$toyc_asm" $LINK_LIBS -o "$toyc_exe" 2>/dev/null; then
     echo "  ❌ ToyC assembly compilation failed"
     FAILED=$((FAILED + 1))
     continue
   fi
   
-  # 处理 Clang 汇编（移除 GNU 汇编器不支持的伪指令）
-  clang_asm_filtered="$TEMP_DIR/${base}_clang_filtered.s"
-  grep -v '\.addrsig\|\.ident\|\.attribute' "$clang_asm" > "$clang_asm_filtered"
-  
-  # 编译 Clang 生成的汇编（使用 -nostdlib 和自定义启动代码，添加 -lgcc 支持软件除法）
+  # 编译 Clang 生成的汇编（使用 Clang + -nostdlib + 自定义启动代码）
+  # Clang 自己生成的汇编可以直接被 Clang 汇编器处理，无需过滤
   clang_exe="$TEMP_DIR/${base}_clang"
-  if ! $RISCV_GCC -march=$RISCV_ARCH -mabi=$RISCV_ABI -nostdlib \
-       "$CRT0_OBJ" "$clang_asm_filtered" -o "$clang_exe" -lgcc 2>/dev/null; then
+  if ! clang --target=$CLANG_TARGET -march=$CLANG_ARCH -mabi=$CLANG_ABI \
+       -nostdlib "$CRT0_OBJ" "$clang_asm" $LINK_LIBS -o "$clang_exe" 2>/dev/null; then
     echo "  ❌ Clang assembly compilation failed"
     FAILED=$((FAILED + 1))
     continue
