@@ -6,8 +6,15 @@ if [[ -n "${BASH_VERSION:-}" ]]; then
     set -o pipefail
 fi
 
-SRC_DIR="examples/compiler_inputs"
-OUT_DIR="$SRC_DIR/asm"
+# 支持通过参数指定源目录，默认为 examples/compiler_inputs
+SRC_DIR="${1:-examples/compiler_inputs}"
+OUT_DIR="test/asm"
+
+# 检查源目录是否存在
+if [[ ! -d "$SRC_DIR" ]]; then
+  echo "Error: Source directory '$SRC_DIR' does not exist"
+  exit 1
+fi
 
 # 创建输出目录（如果已存在则忽略）
 mkdir -p "$OUT_DIR"
@@ -46,16 +53,6 @@ for c in "$SRC_DIR"/*.c; do
     echo "  Clang → asm/${base}_clang.s"
   else
     echo "  跳过 Clang（未找到 $base.c 或 clang 未安装）"
-  fi
-
-  # 3. riscv32-unknown-elf-gcc 生成 asm
-  if [[ -f "$c_file" ]] && command -v riscv32-unknown-elf-gcc >/dev/null 2>&1; then
-    riscv32-unknown-elf-gcc -march=rv32i -mabi=ilp32 -Wall -S \
-      "$c_file" \
-      -o "$OUT_DIR/${base}_riscv.s"
-    echo "  riscv-gcc → asm/${base}_riscv.s"
-  else
-    echo "  跳过 riscv-gcc（未找到 $base.c 或 riscv32-unknown-elf-gcc 未安装）"
   fi
 
   echo

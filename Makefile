@@ -16,7 +16,7 @@ MAIN_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(MAIN_SRCS))
 UNIFIED_TEST_SRCS := $(SRC_DIR)/unified_test.cpp $(SRC_DIR)/ra_linear_scan.cpp
 UNIFIED_TEST_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(UNIFIED_TEST_SRCS))
 
-.PHONY: all clean test build unified_test
+.PHONY: all clean test build unified_test verify
 
 all: build
 
@@ -37,18 +37,32 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 clean:
 	rm -rf $(BUILD_DIR) $(TARGET) $(UNIFIED_TEST_TARGET)
 
+# 默认测试目录
+TEST_SRC_DIR ?= examples/compiler_inputs
+
 test: build
-	@echo "Running tests..."
+	@echo "Running tests on: $(TEST_SRC_DIR)"
 	@if [ -f "scripts/generate_asm.sh" ]; then \
-		bash scripts/generate_asm.sh; \
+		bash scripts/generate_asm.sh "$(TEST_SRC_DIR)"; \
 	else \
 		echo "Error: scripts/generate_asm.sh not found"; \
 		exit 1; \
 	fi
 	@if [ -f "scripts/generate_ir.sh" ]; then \
-		bash scripts/generate_ir.sh; \
+		bash scripts/generate_ir.sh "$(TEST_SRC_DIR)"; \
 	else \
 		echo "Error: scripts/generate_ir.sh not found"; \
 		exit 1; \
 	fi
 	@echo "Tests completed successfully!"
+	@echo "Output: test/asm/ and test/ir/"
+
+verify: test
+	@echo ""
+	@echo "Running output verification..."
+	@if [ -f "scripts/verify_output.sh" ]; then \
+		bash scripts/verify_output.sh "$(TEST_SRC_DIR)"; \
+	else \
+		echo "Error: scripts/verify_output.sh not found"; \
+		exit 1; \
+	fi

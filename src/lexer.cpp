@@ -2,7 +2,7 @@
 #include <unordered_map>
 
 // 关键字映射表：将标识符字符串映射到对应的 TokenType
-static const unordered_map<string, TokenType> keywords = {
+static const std::unordered_map<std::string, TokenType> keywords = {
     {"int", TokenType::INT},
     {"void", TokenType::VOID},
     {"if", TokenType::IF},
@@ -43,7 +43,7 @@ void Lexer::skipWhitespace()
 // makeToken：基于最近消费的单字符生成 Token，lexeme 为该字符
 Token Lexer::makeToken(TokenType type)
 {
-    string text(1, src[pos - 1]); // string(1, char) 将一个字符转换为字符串
+    std::string text(1, src[pos - 1]); // string(1, char) 将一个字符转换为字符串
     return {type, text, line};
 }
 
@@ -54,7 +54,7 @@ Token Lexer::identifier()
     // 为什么需要-1?因为主函数中调用nextToken()时，已经advance()了一次
     while (isalnum(peek()) || peek() == '_')
         advance();
-    string lex = src.substr(start, pos - start);
+    std::string lex = src.substr(start, pos - start);
     auto it = keywords.find(lex);
     TokenType type = (it != keywords.end()) ? it->second : TokenType::ID;
     // 如果找到关键字，则返回关键字类型，否则返回标识符类型(ID)
@@ -67,7 +67,7 @@ Token Lexer::number()
     size_t start = pos - 1;
     while (isdigit(peek()))
         advance();
-    string lex = src.substr(start, pos - start);
+    std::string lex = src.substr(start, pos - start);
     return {TokenType::NUMBER, lex, line};
 }
 

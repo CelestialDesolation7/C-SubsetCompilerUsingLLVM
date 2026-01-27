@@ -268,6 +268,8 @@ std::string RISCVGenerator::generateModule(const std::string &llvmIR)
     // 提前计算所有函数的寄存器分配结果
     precomputeAllFunctionAllocations(llvmIR);
 
+    // 添加汇编文件头
+    assembly += "	.text\n";
     assembly += "	.globl	main                            # -- Begin function main\n";
 
     std::istringstream iss(llvmIR);
@@ -829,13 +831,20 @@ void RISCVGenerator::generateCall(const std::string &funcName, const std::vector
  */
 void RISCVGenerator::generateReturn(const std::string &value)
 {
-    if (value != "0")
+    // 将返回值移动到 a0 寄存器
+    if (value == "0")
+    {
+        addInstruction("	li	a0, 0");
+    }
+    else
     {
         std::string valueReg = parseOperand(value);
         addInstruction("	mv	a0, " + valueReg);
-        addInstruction("__STACK_FRAME_DEALLOCATION_PLACEHOLDER__");
-        addInstruction("	ret");
     }
+    
+    // 生成栈帧回收和返回指令
+    addInstruction("__STACK_FRAME_DEALLOCATION_PLACEHOLDER__");
+    addInstruction("	ret");
     hasReturn = true;
 }
 

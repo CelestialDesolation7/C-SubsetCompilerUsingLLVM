@@ -141,7 +141,7 @@ void runSingleTest(const TestCase &testCase)
             *g_output << "%" << vreg << " ";
         }
         *g_output << std::endl;
-        *g_output << std::string(60, '=') << std::endl;
+        *g_output << std::(60, '=') << std::endl;
     }
 
     // 输出分配结果
@@ -189,8 +189,8 @@ void runSingleTest(const TestCase &testCase)
 void runCustomTest()
 {
     std::cout << "\n请输入自定义LLVM IR (输入一行END结束):" << std::endl;
-    std::string customIR;
-    std::string line;
+    std:: customIR;
+    std:: line;
 
     while (std::getline(std::cin, line))
     {

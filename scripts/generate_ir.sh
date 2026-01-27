@@ -6,8 +6,15 @@ if [[ -n "${BASH_VERSION:-}" ]]; then
     set -o pipefail
 fi
 
-SRC_DIR="examples/compiler_inputs"
-OUT_DIR="$SRC_DIR/ir"
+# 支持通过参数指定源目录，默认为 examples/compiler_inputs
+SRC_DIR="${1:-examples/compiler_inputs}"
+OUT_DIR="test/ir"
+
+# 检查源目录是否存在
+if [[ ! -d "$SRC_DIR" ]]; then
+  echo "Error: Source directory '$SRC_DIR' does not exist"
+  exit 1
+fi
 
 # 1. 创建输出目录
 mkdir -p "$OUT_DIR"

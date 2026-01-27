@@ -15,7 +15,6 @@ int main(int argc, char **argv)
     string outputFile = "";
     string targetArch = "riscv32";
     bool use_stdin = false;
-    bool optimize = false;
 
     // 特殊情况：无参数或只有优化参数，使用标准输入
     if (argc == 1 || (argc == 2 && string(argv[1]) == "-opt"))
@@ -41,7 +40,7 @@ int main(int argc, char **argv)
         }
         else if (arg == "-opt")
         {
-            optimize = true;
+            // 优化选项预留，暂未实现
         }
         else if (
             (arg.size() >= 3 && arg.compare(arg.size() - 3, 3, ".tc") == 0) ||

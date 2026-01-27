@@ -1353,7 +1353,7 @@ namespace ra_ls
         int stackParamCount = paramCount - 8;
 
         // RV32调用约定：前8个参数通过a0-a7传递，其余通过栈传递
-        for (size_t i = 0; i < std::min(8, static_cast<int>(paramCount)); ++i)
+        for (int i = 0; i < std::min(8, paramCount); ++i)
         {
             int vreg = paramVregs[i];
 
