@@ -30,6 +30,8 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - **目标架构**: RISC-V 32-bit (RV32I)
 - **中间表示**: LLVM IR (SSA 形式)
 - **寄存器分配**: 线性扫描算法
+	（原论文：https://web.cs.ucla.edu/~palsberg/course/cs132/linearscan.pdf）
+	（关于本项目中实现的解释：[线性扫描算法核心思路.md](docs\线性扫描算法核心思路.md)）
 
 ---
 
