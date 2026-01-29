@@ -286,10 +286,37 @@ make verify
 # 验证自定义目录
 make verify TEST_SRC_DIR=<your_directory>
 
+# 验证单个文件
+make verify FILE=<filename.c>
+make verify TEST_SRC_DIR=examples/single_func FILE=test_call.c
+
 # 示例
 make verify TEST_SRC_DIR=examples/single_func
 make verify TEST_SRC_DIR=examples/multi_func
+make verify FILE=01_minimal.c
 ```
+
+### 调试模式验证
+
+调试模式可以输出编译的所有中间产物（AST、LLVM IR、汇编代码），便于学习和调试：
+
+```bash
+# 必须指定文件名
+make verify-debug FILE=<filename.c>
+
+# 指定不同目录的文件
+make verify-debug TEST_SRC_DIR=examples/single_func FILE=test_call.c
+
+# 示例
+make verify-debug FILE=01_minimal.c
+make verify-debug FILE=09_recursion.c
+```
+
+调试模式会在 `test/debug/` 目录下生成：
+- `<filename>_all.txt` - 包含所有中间产物的完整输出
+- `<filename>_ast.txt` - 抽象语法树
+- `<filename>_ir.ll` - LLVM IR
+- `<filename>_asm.s` - RISC-V 汇编代码
 
 ### 清理输出
 
@@ -311,10 +338,15 @@ test/
 │   ├── <file1>_toyc.s
 │   ├── <file1>_clang.s
 │   └── ...
-└── ir/           # IR 输出
-    ├── <file1>_toyc.ll
-    ├── <file1>_clang.ll
-    └── ...
+├── ir/           # IR 输出
+│   ├── <file1>_toyc.ll
+│   ├── <file1>_clang.ll
+│   └── ...
+└── debug/        # 调试模式输出
+    ├── <file>_all.txt
+    ├── <file>_ast.txt
+    ├── <file>_ir.ll
+    └── <file>_asm.s
 ```
 
 ---

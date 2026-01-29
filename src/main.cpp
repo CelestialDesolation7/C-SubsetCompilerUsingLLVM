@@ -2,6 +2,8 @@
 #include <sstream>
 #include <iostream>
 #include <string>
+#include <exception>
+#include <cstdio>
 #include "include/parser.h"
 #include "include/llvm_ir.h"
 #include "include/riscv_gen.h"
@@ -10,6 +12,9 @@ using namespace std;
 
 int main(int argc, char **argv)
 {
+    ///////////////////////////
+    //解析命令行参数
+    //////////////////////////
     string inputFile = "";
     string outputMode = "asm";
     string outputFile = "";
@@ -79,90 +84,136 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    // 加载输入
-    stringstream buf;
-    string inputExt;
-    bool isLLVMIR = false;
-    vector<shared_ptr<FuncDef>> funcs;
-    string llvmIR;
+    //////////////////////////
+    // 编译开始
+    //////////////////////////
+    string currentStage = "initialization";
+    
+    try {
+        // 加载输入以及临时变量
+        stringstream buf;
+        string inputExt;
+        bool isLLVMIR = false;
+        vector<shared_ptr<FuncDef>> funcs;
+        string llvmIR;
+        stringstream outputBuffer;  // 临时缓冲区，成功后才写入文件
 
-    if (use_stdin)
-    {
-        string line;
-        while (getline(cin, line))
+        currentStage = "reading input";
+        if (use_stdin)
         {
-            buf << line << '\n';
-        }
-        inputExt = ".tc"; // 默认认为 stdin 是 ToyC 源码
-    }
-    else
-    {
-        inputExt = inputFile.substr(inputFile.find_last_of('.'));
-        ifstream in(inputFile);
-        if (!in)
-        {
-            cerr << "Cannot open file: " << inputFile << "\n";
-            return 1;
-        }
-        buf << in.rdbuf();
-    }
-
-    // 分支逻辑处理
-    isLLVMIR = (inputExt == ".ll");
-    if (isLLVMIR)
-    {
-        llvmIR = buf.str(); // 直接读取 IR
-    }
-    else
-    {
-        Parser parser(buf.str());
-        funcs = parser.parseCompUnit();
-        llvmIR = generateLLVMIR(funcs);
-    }
-
-    // 输出目标流
-    ostream *out = &cout;
-    ofstream fileOut;
-    if (!outputFile.empty())
-    {
-        fileOut.open(outputFile);
-        if (!fileOut)
-        {
-            cerr << "Cannot open output file: " << outputFile << "\n";
-            return 1;
-        }
-        out = &fileOut;
-    }
-
-    // 输出各阶段
-    if (outputMode == "ast" || outputMode == "all")
-    {
-        if (!isLLVMIR)
-        {
-            *out << "=== Abstract Syntax Tree ===\n";
-            for (auto &f : funcs)
+            string line;
+            while (getline(cin, line))
             {
-                f->print(0);
-                *out << "\n";
+                buf << line << '\n';
             }
-            *out << "\n";
+            inputExt = ".tc"; // 默认认为 stdin 是 ToyC 源码
         }
         else
         {
-            *out << "AST not available for LLVM IR input\n\n";
+            inputExt = inputFile.substr(inputFile.find_last_of('.'));
+            ifstream in(inputFile);
+            if (!in)
+            {
+                cerr << "Error: Cannot open file: " << inputFile << "\n";
+                return 1;
+            }
+            buf << in.rdbuf();
         }
-    }
 
-    if (outputMode == "ir" || outputMode == "all")
-    {
-        *out << llvmIR;
-    }
+        // 调用编译逻辑
+        isLLVMIR = (inputExt == ".ll");
+        if (isLLVMIR)
+        {
+            currentStage = "loading IR";
+            llvmIR = buf.str(); // 直接读取 IR
+        }
+        else
+        {
+            currentStage = "parsing (lexical and syntax analysis)";
+            Parser parser(buf.str());
+            funcs = parser.parseCompUnit();
+            
+            currentStage = "generating LLVM IR";
+            llvmIR = generateLLVMIR(funcs);
+        }
 
-    if (outputMode == "asm" || outputMode == "all")
-    {
-        string assembly = generateRISCVAssembly(llvmIR);
-        *out << assembly;
-    }
+        // 输出各阶段到临时缓冲区
+        currentStage = "generating output";
+        
+        if (outputMode == "ast" || outputMode == "all")
+        {
+            if (!isLLVMIR)
+            {
+                outputBuffer << "=== Abstract Syntax Tree ===\n";
+                for (auto &f : funcs)
+                {
+                    f->print(0);
+                    outputBuffer << "\n";
+                }
+                outputBuffer << "\n";
+            }
+            else
+            {
+                outputBuffer << "AST not available for LLVM IR input\n\n";
+            }
+        }
 
-    return 0;
+        if (outputMode == "ir" || outputMode == "all")
+        {
+            outputBuffer << llvmIR;
+        }
+
+        if (outputMode == "asm" || outputMode == "all")
+        {
+            currentStage = "generating RISC-V assembly";
+            string assembly = generateRISCVAssembly(llvmIR);
+            outputBuffer << assembly;
+        }
+
+        // 所有阶段成功完成，现在写入输出
+        currentStage = "writing output";
+        ostream *out = &cout;
+        ofstream fileOut;
+        if (!outputFile.empty())
+        {
+            fileOut.open(outputFile);
+            if (!fileOut)
+            {
+                cerr << "Error: Cannot open output file: " << outputFile << "\n";
+                return 1;
+            }
+            out = &fileOut;
+        }
+
+        *out << outputBuffer.str();
+        
+        if (fileOut.is_open())
+        {
+            fileOut.close();
+        }
+
+        return 0;
+        
+    } catch (const exception &e) {
+        cerr << "Error: Compilation failed at stage: " << currentStage << "\n";
+        cerr << "Details: " << e.what() << "\n";
+        
+        // 如果输出文件已创建但编译失败，删除它
+        if (!outputFile.empty())
+        {
+            remove(outputFile.c_str());
+        }
+        
+        return 1;
+    } catch (...) {
+        cerr << "Error: Unknown error occurred at stage: " << currentStage << "\n";
+        
+        // 如果输出文件已创建但编译失败，删除它
+        if (!outputFile.empty())
+        {
+            remove(outputFile.c_str());
+        }
+        
+        return 1;
+    }
 }

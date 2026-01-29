@@ -1,7 +1,7 @@
 #include "include/parser.h"
 
 // 构造函数：初始化词法分析器并预读两个 Token 到 cur 和 nxt
-Parser::Parser(const string &source) : lex(source)
+Parser::Parser(const std::string &source) : lex(source)
 {
     cur = lex.nextToken(); // 读取第一个 Token
     nxt = lex.nextToken(); // 读取第二个 Token，实现预读
@@ -30,16 +30,16 @@ void Parser::expect(TokenType t)
 {
     if (!match(t))
     {
-        cerr << "Unexpected token '" << cur.lexeme
+        std::cerr << "Unexpected token '" << cur.lexeme
              << "' at line " << cur.line << "\n";
         exit(1);
     }
 }
 
 // parseCompUnit：解析编译单元 CompUnit → FuncDef+，返回所有函数定义
-vector<shared_ptr<FuncDef>> Parser::parseCompUnit()
+std::vector<std::shared_ptr<FuncDef>> Parser::parseCompUnit()
 {
-    vector<shared_ptr<FuncDef>> funcs;
+    std::vector<std::shared_ptr<FuncDef>> funcs;
     // 只要下一个是 int 或 void，就不断解析函数定义
     while (cur.type == TokenType::INT || cur.type == TokenType::VOID)
         funcs.push_back(parseFuncDef());
@@ -47,19 +47,19 @@ vector<shared_ptr<FuncDef>> Parser::parseCompUnit()
 }
 
 // parseFuncDef：解析函数定义 FuncDef → (“int” ∣ “void”) ID “(” (Param (“,” Param)∗)? “)” Block
-shared_ptr<FuncDef> Parser::parseFuncDef()
+std::shared_ptr<FuncDef> Parser::parseFuncDef()
 {
-    string retType = cur.lexeme; // 保存返回类型
+    std::string retType = cur.lexeme; // 保存返回类型
     advance();                   // 消费 int/void
 
     // 函数名必须为标识符
     if (cur.type != TokenType::ID)
     {
-        cerr << "Expected function name, got '" << cur.lexeme
+        std::cerr << "Expected function name, got '" << cur.lexeme
              << "' at line " << cur.line << "\n";
         exit(1);
     }
-    string name = cur.lexeme; // 保存函数名
+    std::string name = cur.lexeme; // 保存函数名
     advance();                // 消费函数名
 
     expect(TokenType::LPAREN);   // 消费 '('
@@ -69,7 +69,7 @@ shared_ptr<FuncDef> Parser::parseFuncDef()
     auto body = parseBlock(); // 解析函数体 Block
 
     // 构造 FuncDef 节点并返回
-    auto f = make_shared<FuncDef>();
+    auto f = std::make_shared<FuncDef>();
     f->retType = retType;
     f->name = name;
     f->params = params;
@@ -78,9 +78,9 @@ shared_ptr<FuncDef> Parser::parseFuncDef()
 }
 
 // parseParams：解析参数列表 Param → “int” ID (“,” “int” ID)*
-vector<Param> Parser::parseParams()
+std::vector<Param> Parser::parseParams()
 {
-    vector<Param> ps;
+    std::vector<Param> ps;
     // 如果当前是 int，则至少有一个参数
     if (cur.type == TokenType::INT)
     {
@@ -89,7 +89,7 @@ vector<Param> Parser::parseParams()
             advance(); // 消费 'int'
             if (cur.type != TokenType::ID)
             {
-                cerr << "Expected parameter name after 'int', got '"
+                std::cerr << "Expected parameter name after 'int', got '"
                      << cur.lexeme << "' at line " << cur.line << "\n";
                 exit(1);
             }
@@ -103,10 +103,10 @@ vector<Param> Parser::parseParams()
 }
 
 // parseBlock：解析语句块 Block → “{” Stmt∗ “}”
-shared_ptr<BlockStmt> Parser::parseBlock()
+std::shared_ptr<BlockStmt> Parser::parseBlock()
 {
     expect(TokenType::LBRACE); // 消费 '{'
-    auto block = make_shared<BlockStmt>();
+    auto block = std::make_shared<BlockStmt>();
     // 循环解析直到 '}'
     while (!match(TokenType::RBRACE))
         block->stmts.push_back(parseStmt());
@@ -135,7 +135,7 @@ ASTPtr Parser::parseStmt()
         ASTPtr elseS = nullptr;
         if (match(TokenType::ELSE))
             elseS = parseStmt();
-        return make_shared<IfStmt>(cond, thenS, elseS);
+        return std::make_shared<IfStmt>(cond, thenS, elseS);
     }
 
     // while 语句
@@ -146,7 +146,7 @@ ASTPtr Parser::parseStmt()
         auto cond = parseExpr();
         expect(TokenType::RPAREN);
         auto body = parseStmt();
-        return make_shared<WhileStmt>(cond, body);
+        return std::make_shared<WhileStmt>(cond, body);
     }
 
     // return 语句
@@ -156,47 +156,47 @@ ASTPtr Parser::parseStmt()
         if (cur.type != TokenType::SEMI)
             e = parseExpr();
         expect(TokenType::SEMI);
-        return make_shared<ReturnStmt>(e);
+        return std::make_shared<ReturnStmt>(e);
     }
 
     // break 语句
     if (match(TokenType::BREAK))
     {
         expect(TokenType::SEMI);
-        return make_shared<BreakStmt>();
+        return std::make_shared<BreakStmt>();
     }
 
     // continue 语句
     if (match(TokenType::CONTINUE))
     {
         expect(TokenType::SEMI);
-        return make_shared<ContinueStmt>();
+        return std::make_shared<ContinueStmt>();
     }
 
     // 变量声明语句：int x = expr, ...;
     if (cur.type == TokenType::INT)
     {
         advance();
-        vector<ASTPtr> decls;
+        std::vector<ASTPtr> decls;
         do
         {
             if (cur.type != TokenType::ID)
             {
-                cerr << "Expected identifier after 'int', got '"
+                std::cerr << "Expected identifier after 'int', got '"
                      << cur.lexeme << "' at line " << cur.line << "\n";
                 exit(1);
             }
-            string name = cur.lexeme;
+            std::string name = cur.lexeme;
             advance();
             expect(TokenType::ASSIGN);
             auto e = parseExpr();
-            decls.push_back(make_shared<DeclStmt>(name, e));
+            decls.push_back(std::make_shared<DeclStmt>(name, e));
         } while (match(TokenType::COMMA));
         expect(TokenType::SEMI);
         // 单个声明直接返回，否则包装成 BlockStmt
         if (decls.size() == 1)
             return decls[0];
-        auto blk = make_shared<BlockStmt>();
+        auto blk = std::make_shared<BlockStmt>();
         blk->stmts = decls;
         return blk;
     }
@@ -204,13 +204,13 @@ ASTPtr Parser::parseStmt()
     // 区分函数调用和赋值语句
     if (cur.type == TokenType::ID)
     {
-        string name = cur.lexeme;
+        std::string name = cur.lexeme;
         if (nxt.type == TokenType::LPAREN)
         {
             // 函数调用语句
             advance(); // 消费函数名
             advance(); // 消费 '('
-            auto call = make_shared<CallExpr>(name);
+            auto call = std::make_shared<CallExpr>(name);
             if (cur.type != TokenType::RPAREN)
             {
                 do
@@ -229,7 +229,7 @@ ASTPtr Parser::parseStmt()
             advance();
             auto e = parseExpr();
             expect(TokenType::SEMI);
-            return make_shared<AssignStmt>(name, e);
+            return std::make_shared<AssignStmt>(name, e);
         }
     }
 
@@ -254,7 +254,7 @@ ASTPtr Parser::parseLOr()
     while (match(TokenType::OR))
     {
         auto right = parseLAnd();
-        left = make_shared<BinaryExpr>("||", left, right);
+        left = std::make_shared<BinaryExpr>("||", left, right);
     }
     return left;
 }
@@ -266,7 +266,7 @@ ASTPtr Parser::parseLAnd()
     while (match(TokenType::AND))
     {
         auto right = parseRel();
-        left = make_shared<BinaryExpr>("&&", left, right);
+        left = std::make_shared<BinaryExpr>("&&", left, right);
     }
     return left;
 }
@@ -279,10 +279,10 @@ ASTPtr Parser::parseRel()
            cur.type == TokenType::LE || cur.type == TokenType::GE ||
            cur.type == TokenType::EQ || cur.type == TokenType::NE)
     {
-        string op = cur.lexeme;
+        std::string op = cur.lexeme;
         advance();
         auto right = parseAdd();
-        left = make_shared<BinaryExpr>(op, left, right);
+        left = std::make_shared<BinaryExpr>(op, left, right);
     }
     return left;
 }
@@ -293,10 +293,10 @@ ASTPtr Parser::parseAdd()
     auto left = parseMul();
     while (cur.type == TokenType::PLUS || cur.type == TokenType::MINUS)
     {
-        string op = cur.lexeme;
+        std::string op = cur.lexeme;
         advance();
         auto right = parseMul();
-        left = make_shared<BinaryExpr>(op, left, right);
+        left = std::make_shared<BinaryExpr>(op, left, right);
     }
     return left;
 }
@@ -307,10 +307,10 @@ ASTPtr Parser::parseMul()
     auto left = parseUnary();
     while (cur.type == TokenType::TIMES || cur.type == TokenType::DIV || cur.type == TokenType::MOD)
     {
-        string op = cur.lexeme;
+        std::string op = cur.lexeme;
         advance();
         auto right = parseUnary();
-        left = make_shared<BinaryExpr>(op, left, right);
+        left = std::make_shared<BinaryExpr>(op, left, right);
     }
     return left;
 }
@@ -320,10 +320,10 @@ ASTPtr Parser::parseUnary()
 {
     if (cur.type == TokenType::PLUS || cur.type == TokenType::MINUS || cur.type == TokenType::NOT)
     {
-        string op = cur.lexeme;
+        std::string op = cur.lexeme;
         advance();
         auto e = parseUnary();
-        return make_shared<UnaryExpr>(op, e);
+        return std::make_shared<UnaryExpr>(op, e);
     }
     return parsePrimary();
 }
@@ -334,11 +334,11 @@ ASTPtr Parser::parsePrimary()
     // 变量或函数调用
     if (cur.type == TokenType::ID)
     {
-        string name = cur.lexeme;
+        std::string name = cur.lexeme;
         advance();
         if (match(TokenType::LPAREN))
         { // 函数调用
-            auto call = make_shared<CallExpr>(name);
+            auto call = std::make_shared<CallExpr>(name);
             // 解析参数列表，直到遇到右括号
             while (cur.type != TokenType::RPAREN)
             {
@@ -349,14 +349,14 @@ ASTPtr Parser::parsePrimary()
             return call;
         }
         // 变量引用
-        return make_shared<IdentifierExpr>(name);
+        return std::make_shared<IdentifierExpr>(name);
     }
     // 数字字面量
     if (cur.type == TokenType::NUMBER)
     {
         int v = stoi(cur.lexeme);
         advance();
-        return make_shared<NumberExpr>(v);
+        return std::make_shared<NumberExpr>(v);
     }
     // 括号表达式
     if (match(TokenType::LPAREN))
@@ -366,6 +366,6 @@ ASTPtr Parser::parsePrimary()
         return e;
     }
     // 非预期 Token，报错
-    cerr << "Unexpected primary: " << cur.lexeme << " at line " << cur.line << "\n";
+    std::cerr << "Unexpected primary: " << cur.lexeme << " at line " << cur.line << "\n";
     exit(1);
 }

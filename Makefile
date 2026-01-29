@@ -58,12 +58,53 @@ test: build
 	@echo "Tests completed successfully!"
 	@echo "Output: test/asm/ and test/ir/"
 
-verify: test
+verify: build
+	@echo ""
+	@if [ -z "$(FILE)" ]; then \
+		echo "Running full test suite..."; \
+		if [ -f "scripts/generate_asm.sh" ]; then \
+			bash scripts/generate_asm.sh "$(TEST_SRC_DIR)"; \
+		fi; \
+		if [ -f "scripts/generate_ir.sh" ]; then \
+			bash scripts/generate_ir.sh "$(TEST_SRC_DIR)"; \
+		fi; \
+	else \
+		echo "Compiling single file: $(FILE)"; \
+		mkdir -p test/asm test/ir; \
+		FILE_PATH="$(TEST_SRC_DIR)/$(FILE)"; \
+		if echo "$(FILE)" | grep -q "/"; then \
+			FILE_PATH="$(FILE)"; \
+		fi; \
+		BASE_NAME=$$(basename "$$FILE_PATH" .c); \
+		./toyc "$$FILE_PATH" --mode asm --output "test/asm/$${BASE_NAME}_toyc.s"; \
+		clang --target=riscv32 -march=rv32im -mabi=ilp32 -S "$$FILE_PATH" -o "test/asm/$${BASE_NAME}_clang.s"; \
+		./toyc "$$FILE_PATH" --mode ir --output "test/ir/$${BASE_NAME}_toyc.ll"; \
+		clang -S -emit-llvm -O0 "$$FILE_PATH" -o "test/ir/$${BASE_NAME}_clang.ll"; \
+	fi
 	@echo ""
 	@echo "Running output verification..."
 	@if [ -f "scripts/verify_output.sh" ]; then \
-		bash scripts/verify_output.sh "$(TEST_SRC_DIR)"; \
+		if [ -n "$(FILE)" ]; then \
+			bash scripts/verify_output.sh "$(TEST_SRC_DIR)" "$(FILE)"; \
+		else \
+			bash scripts/verify_output.sh "$(TEST_SRC_DIR)"; \
+		fi \
 	else \
 		echo "Error: scripts/verify_output.sh not found"; \
+		exit 1; \
+	fi
+
+verify-debug: build
+	@echo ""
+	@echo "Running output verification in DEBUG mode..."
+	@if [ -f "scripts/verify_debug.sh" ]; then \
+		if [ -z "$(FILE)" ]; then \
+			echo "Error: FILE parameter is required for verify-debug"; \
+			echo "Usage: make verify-debug FILE=<filename.c>"; \
+			exit 1; \
+		fi; \
+		bash scripts/verify_debug.sh "$(TEST_SRC_DIR)" "$(FILE)"; \
+	else \
+		echo "Error: scripts/verify_debug.sh not found"; \
 		exit 1; \
 	fi

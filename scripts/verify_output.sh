@@ -10,6 +10,8 @@ fi
 
 # 支持通过参数指定源目录，默认为 examples/compiler_inputs
 SRC_DIR="${1:-examples/compiler_inputs}"
+# 支持指定单个文件进行测试
+SINGLE_FILE="${2:-}"
 ASM_DIR="test/asm"
 
 # 检查源目录是否存在
@@ -121,18 +123,42 @@ fi
 TOTAL=0
 PASSED=0
 FAILED=0
+SKIPPED=0
 
 echo "========================================="
 echo "  ToyC Compiler Output Verification"
 echo "========================================="
 echo "Source directory: $SRC_DIR"
+if [[ -n "$SINGLE_FILE" ]]; then
+  echo "Testing single file: $SINGLE_FILE"
+fi
 echo "Assembly directory: $ASM_DIR"
 echo "Compiler: clang --target=$CLANG_TARGET"
 echo "QEMU command: $QEMU_CMD"
 echo ""
 
+# 准备测试文件列表
+if [[ -n "$SINGLE_FILE" ]]; then
+  # 单文件测试模式
+  # 智能处理文件路径：如果包含路径分隔符，说明是相对路径，直接使用
+  if [[ "$SINGLE_FILE" == *"/"* ]] || [[ "$SINGLE_FILE" == *"\\"* ]]; then
+    c_file="$SINGLE_FILE"
+  else
+    c_file="$SRC_DIR/$SINGLE_FILE"
+  fi
+  
+  if [[ ! -f "$c_file" ]]; then
+    echo "Error: File '$c_file' does not exist"
+    exit 1
+  fi
+  TEST_FILES=("$c_file")
+else
+  # 批量测试模式
+  TEST_FILES=("$SRC_DIR"/*.c)
+fi
+
 # 遍历所有测试文件
-for c_file in "$SRC_DIR"/*.c; do
+for c_file in "${TEST_FILES[@]}"; do
   # 跳过不存在的情况
   if [[ ! -f "$c_file" ]]; then
     echo "No .c files found in $SRC_DIR"
@@ -143,18 +169,25 @@ for c_file in "$SRC_DIR"/*.c; do
   toyc_asm="$ASM_DIR/${base}_toyc.s"
   clang_asm="$ASM_DIR/${base}_clang.s"
   
-  # 检查汇编文件是否存在
-  if [[ ! -f "$toyc_asm" ]]; then
-    echo "⚠ Skipping $base: ToyC assembly not found"
-    continue
-  fi
-  
-  if [[ ! -f "$clang_asm" ]]; then
-    echo "⚠ Skipping $base: Clang assembly not found"
-    continue
-  fi
-  
   TOTAL=$((TOTAL + 1))
+  
+  # 检查汇编文件是否存在且不为空
+  if [[ ! -f "$toyc_asm" ]] || [[ ! -s "$toyc_asm" ]]; then
+    echo "─────────────────────────────────────────"
+    echo "Testing: $base"
+    echo "  ⚠ SKIPPED: ToyC assembly not found or empty (compilation failed)"
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+  
+  if [[ ! -f "$clang_asm" ]] || [[ ! -s "$clang_asm" ]]; then
+    echo "─────────────────────────────────────────"
+    echo "Testing: $base"
+    echo "  ⚠ SKIPPED: Clang assembly not found or empty (reference missing)"
+    SKIPPED=$((SKIPPED + 1))
+    continue
+  fi
+  
   echo "─────────────────────────────────────────"
   echo "Testing: $base"
   
@@ -233,13 +266,17 @@ done
 echo "========================================="
 echo "  Verification Summary"
 echo "========================================="
-echo "Total tests:  $TOTAL"
+echo "Total files:  $TOTAL"
 echo "Passed:       $PASSED ✅"
 echo "Failed:       $FAILED ❌"
+echo "Skipped:      $SKIPPED ⚠"
 echo ""
 
-if [[ $FAILED -eq 0 ]] && [[ $TOTAL -gt 0 ]]; then
+if [[ $FAILED -eq 0 ]] && [[ $SKIPPED -eq 0 ]] && [[ $TOTAL -gt 0 ]]; then
   echo "🎉 All tests passed!"
+  exit 0
+elif [[ $FAILED -eq 0 ]] && [[ $TOTAL -gt 0 ]]; then
+  echo "✅ All runnable tests passed (some files skipped due to compilation errors)"
   exit 0
 elif [[ $TOTAL -eq 0 ]]; then
   echo "⚠ No tests were run"

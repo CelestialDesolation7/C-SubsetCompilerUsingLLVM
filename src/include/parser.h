@@ -7,10 +7,10 @@ class Parser
 {
 public:
     // 构造函数：初始化 Lexer 并预读两个 Token
-    Parser(const string &source);
+    Parser(const std::string &source);
 
     // 解析编译单元 CompUnit → FuncDef+
-    vector<shared_ptr<FuncDef>> parseCompUnit();
+    std::vector<std::shared_ptr<FuncDef>> parseCompUnit();
 
 private:
     Lexer lex;      // 词法分析器实例
@@ -26,13 +26,13 @@ private:
     void expect(TokenType expected);
 
     // 解析函数定义 FuncDef → (“int” ∣ “void”) ID “(” (Param (“,” Param)∗)? “)” Block
-    shared_ptr<FuncDef> parseFuncDef();
+    std::shared_ptr<FuncDef> parseFuncDef();
 
     // 解析形参列表 Param → “int” ID (“,” “int” ID)*
-    vector<Param> parseParams();
+    std::vector<Param> parseParams();
 
     // 解析语句块 Block → “{” Stmt∗ “}”
-    shared_ptr<BlockStmt> parseBlock();
+    std::shared_ptr<BlockStmt> parseBlock();
 
     // 解析单条语句 Stmt → 声明|赋值|if|while|return|break|continue
     ASTPtr parseStmt();

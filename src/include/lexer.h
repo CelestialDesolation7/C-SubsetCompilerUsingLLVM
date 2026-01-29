@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-using namespace std;
 
 // TokenType 枚举：表示词法分析器输出的各种符号类型
 enum class TokenType
@@ -59,7 +58,7 @@ enum class TokenType
 struct Token
 {
     TokenType type; // Token 类型
-    string lexeme;  // 原始文本内容
+    std::string lexeme;  // 原始文本内容
     int line;       // 所在行号，用于错误定位
 };
 
@@ -68,13 +67,12 @@ class Lexer
 {
 public:
     // 构造函数：传入整个源代码文本
-    Lexer(const string &source);
-
+    Lexer(const std::string &source);
     // 返回下一个 Token
     Token nextToken();
 
 private:
-    string src;     // 源代码文本
+    std::string src;     // 源代码文本
     size_t pos = 0; // 当前扫描位置
     int line = 1;   // 当前行号，从 1 开始
 

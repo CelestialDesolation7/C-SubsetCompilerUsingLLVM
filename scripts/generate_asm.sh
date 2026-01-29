@@ -34,11 +34,17 @@ for c in "$SRC_DIR"/*.c; do
 
   # 1. ToyC 生成 asm
   if [[ -f "./toyc" ]]; then
-    ./toyc "$c" --mode asm --output "$OUT_DIR/${base}_toyc.s"
-    echo "  ToyC → asm/${base}_toyc.s"
+    if ./toyc "$c" --mode asm --output "$OUT_DIR/${base}_toyc.s" 2>/dev/null; then
+      echo "  ToyC → asm/${base}_toyc.s"
+    else
+      echo "  ToyC → FAILED (compilation error)"
+    fi
   elif [[ -f "./toyc.exe" ]]; then
-    ./toyc.exe "$c" --mode asm --output "$OUT_DIR/${base}_toyc.s"
-    echo "  ToyC → asm/${base}_toyc.s"
+    if ./toyc.exe "$c" --mode asm --output "$OUT_DIR/${base}_toyc.s" 2>/dev/null; then
+      echo "  ToyC → asm/${base}_toyc.s"
+    else
+      echo "  ToyC → FAILED (compilation error)"
+    fi
   else
     echo "  ToyC → skipped (toyc not found)"
   fi

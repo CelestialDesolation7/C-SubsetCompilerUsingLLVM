@@ -4,21 +4,21 @@
 static void printIndent(int level)
 {
     for (int i = 0; i < level; ++i)
-        cout << "  ";
+        std::cout << "  ";
 }
 
 // NumberExpr 打印实现：输出 Number(value)，value 为数字字面量
 void NumberExpr::print(int level) const
 {
     printIndent(level);
-    cout << "Number(" << value << ")\n";
+    std::cout << "Number(" << value << ")\n";
 }
 
 // IdentifierExpr 打印实现：输出 Identifier(name)，name 为标识符名称
 void IdentifierExpr::print(int level) const
 {
     printIndent(level);
-    cout << "Identifier(" << name << ")\n";
+    std::cout << "Identifier(" << name << ")\n";
 }
 
 // BinaryExpr 打印实现：
@@ -27,7 +27,7 @@ void IdentifierExpr::print(int level) const
 void BinaryExpr::print(int level) const
 {
     printIndent(level);
-    cout << "Binary(" << op << ")\n";
+    std::cout << "Binary(" << op << ")\n";
     lhs->print(level + 1);
     rhs->print(level + 1);
 }
@@ -36,7 +36,7 @@ void BinaryExpr::print(int level) const
 void UnaryExpr::print(int level) const
 {
     printIndent(level);
-    cout << "Unary(" << op << ")\n";
+    std::cout << "Unary(" << op << ")\n";
     expr->print(level + 1);
 }
 
@@ -44,7 +44,7 @@ void UnaryExpr::print(int level) const
 void CallExpr::print(int level) const
 {
     printIndent(level);
-    cout << "Call(" << callee << ")\n";
+    std::cout << "Call(" << callee << ")\n";
     for (auto &arg : args)
         arg->print(level + 1);
 }
@@ -53,7 +53,7 @@ void CallExpr::print(int level) const
 void AssignStmt::print(int level) const
 {
     printIndent(level);
-    cout << "Assign(" << name << ")\n";
+    std::cout << "Assign(" << name << ")\n";
     expr->print(level + 1);
 }
 
@@ -61,7 +61,7 @@ void AssignStmt::print(int level) const
 void DeclStmt::print(int level) const
 {
     printIndent(level);
-    cout << "Decl(" << name << ")\n";
+    std::cout << "Decl(" << name << ")\n";
     expr->print(level + 1);
 }
 
@@ -71,13 +71,13 @@ void DeclStmt::print(int level) const
 void IfStmt::print(int level) const
 {
     printIndent(level);
-    cout << "If\n";
+    std::cout << "If\n";
     cond->print(level + 1);
     thenStmt->print(level + 1);
     if (elseStmt)
     {
         printIndent(level);
-        cout << "Else\n";
+        std::cout << "Else\n";
         elseStmt->print(level + 1);
     }
 }
@@ -86,7 +86,7 @@ void IfStmt::print(int level) const
 void WhileStmt::print(int level) const
 {
     printIndent(level);
-    cout << "While\n";
+    std::cout << "While\n";
     cond->print(level + 1);
     body->print(level + 1);
 }
@@ -95,21 +95,21 @@ void WhileStmt::print(int level) const
 void BreakStmt::print(int level) const
 {
     printIndent(level);
-    cout << "Break\n";
+    std::cout << "Break\n";
 }
 
 // ContinueStmt 打印实现：输出 Continue
 void ContinueStmt::print(int level) const
 {
     printIndent(level);
-    cout << "Continue\n";
+    std::cout << "Continue\n";
 }
 
 // ReturnStmt 打印实现：输出 Return，如有返回表达式则打印该表达式
 void ReturnStmt::print(int level) const
 {
     printIndent(level);
-    cout << "Return\n";
+    std::cout << "Return\n";
     if (expr)
         expr->print(level + 1);
 }
@@ -118,7 +118,7 @@ void ReturnStmt::print(int level) const
 void BlockStmt::print(int level) const
 {
     printIndent(level);
-    cout << "Block\n";
+    std::cout << "Block\n";
     for (auto &stmt : stmts)
         stmt->print(level + 1);
 }
@@ -129,13 +129,13 @@ void BlockStmt::print(int level) const
 void FuncDef::print(int level) const
 {
     printIndent(level);
-    cout << "Function " << retType << " " << name << "(";
+    std::cout << "Function " << retType << " " << name << "(";
     for (size_t i = 0; i < params.size(); ++i)
     {
-        cout << params[i].name;
+        std::cout << params[i].name;
         if (i + 1 < params.size())
-            cout << ", ";
+            std::cout << ", ";
     }
-    cout << ")\n";
+    std::cout << ")\n";
     body->print(level + 1);
 }

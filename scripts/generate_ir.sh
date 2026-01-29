@@ -32,11 +32,17 @@ for c in "$SRC_DIR"/*.c; do
 
   # 2.1 ToyC 生成 IR（.ll）
   if [[ -f "./toyc" ]]; then
-    ./toyc "$c" --mode ir --output "$OUT_DIR/${base}_toyc.ll"
-    echo "ToyC IR →  $OUT_DIR/${base}_toyc.ll"
+    if ./toyc "$c" --mode ir --output "$OUT_DIR/${base}_toyc.ll" 2>/dev/null; then
+      echo "ToyC IR →  $OUT_DIR/${base}_toyc.ll"
+    else
+      echo "ToyC IR → FAILED (compilation error)"
+    fi
   elif [[ -f "./toyc.exe" ]]; then
-    ./toyc.exe "$c" --mode ir --output "$OUT_DIR/${base}_toyc.ll"
-    echo "ToyC IR →  $OUT_DIR/${base}_toyc.ll"
+    if ./toyc.exe "$c" --mode ir --output "$OUT_DIR/${base}_toyc.ll" 2>/dev/null; then
+      echo "ToyC IR →  $OUT_DIR/${base}_toyc.ll"
+    else
+      echo "ToyC IR → FAILED (compilation error)"
+    fi
   else
     echo "ToyC IR → skipped (toyc not found)"
   fi
