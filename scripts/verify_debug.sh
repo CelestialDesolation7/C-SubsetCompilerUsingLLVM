@@ -42,6 +42,11 @@ fi
 
 base="$(basename "$c_file" .c)"
 DEBUG_DIR="test/debug"
+
+# 清理 debug 目录中该文件的旧输出
+echo "Cleaning previous debug outputs for ${base}..."
+rm -f "$DEBUG_DIR/${base}"_* 2>/dev/null || true
+
 mkdir -p "$DEBUG_DIR"
 
 echo "========================================="
@@ -51,120 +56,143 @@ echo "Source file: $c_file"
 echo "Output directory: $DEBUG_DIR"
 echo ""
 
-# 输出文件路径
-AST_OUT="$DEBUG_DIR/${base}_ast.txt"
-IR_OUT="$DEBUG_DIR/${base}_ir.ll"
-ASM_OUT="$DEBUG_DIR/${base}_asm.s"
-ALL_OUT="$DEBUG_DIR/${base}_all.txt"
+# 输出文件路径 - ToyC
+AST_OUT="$DEBUG_DIR/${base}_toyc_ast.txt"
+IR_OUT="$DEBUG_DIR/${base}_toyc_ir.ll"
+ASM_OUT="$DEBUG_DIR/${base}_toyc_asm.s"
 
-# 使用 --mode all 生成所有中间产物
+# 输出文件路径 - Clang
+CLANG_IR_OUT="$DEBUG_DIR/${base}_clang_ir.ll"
+CLANG_ASM_OUT="$DEBUG_DIR/${base}_clang_asm.s"
+
+# Step 1: 生成 AST
 echo "─────────────────────────────────────────"
-echo "Step 1: Generating all intermediate outputs..."
-if ./toyc "$c_file" --mode all --output "$ALL_OUT"; then
-  echo "✅ All outputs generated successfully"
-  echo "   Output file: $ALL_OUT"
+echo "Step 1: Generating Abstract Syntax Tree..."
+echo ""
+if ./toyc "$c_file" --mode ast --output "$AST_OUT" 2>/dev/null; then
+  echo "✅ AST generated successfully"
+  echo "   Saved to: $AST_OUT"
+  echo ""
+  echo "AST Output:"
+  cat "$AST_OUT"
+  echo ""
 else
-  echo "❌ Compilation failed"
+  echo "❌ AST generation failed"
   exit 1
 fi
 
-echo ""
+# Step 2: 生成 LLVM IR
 echo "─────────────────────────────────────────"
-echo "Step 2: Extracting individual stages..."
-
-# 分离AST、IR和Assembly到单独的文件
-awk '
-  BEGIN { stage="none" }
-  /^=== Abstract Syntax Tree ===$/ { stage="ast"; next }
-  /^; ModuleID =/ { stage="ir" }
-  /^        \.text$/ || /^        \.globl/ { stage="asm" }
-  stage == "ast" && /^$/ && NR > 2 { next }
-  stage == "ast" { print > "'"$AST_OUT"'" }
-  stage == "ir" { print > "'"$IR_OUT"'" }
-  stage == "asm" { print > "'"$ASM_OUT"'" }
-' "$ALL_OUT"
-
-# 检查各个文件是否生成成功
-if [[ -f "$AST_OUT" ]]; then
-  echo "✅ AST extracted: $AST_OUT"
-else
-  echo "⚠ AST not found (might be empty or not generated)"
-fi
-
-if [[ -f "$IR_OUT" ]] && [[ -s "$IR_OUT" ]]; then
-  echo "✅ LLVM IR extracted: $IR_OUT"
-else
-  echo "⚠ LLVM IR not found or empty"
-fi
-
-if [[ -f "$ASM_OUT" ]] && [[ -s "$ASM_OUT" ]]; then
-  echo "✅ Assembly extracted: $ASM_OUT"
-else
-  echo "⚠ Assembly not found or empty"
-fi
-
+echo "Step 2: Generating LLVM IR..."
 echo ""
+if ./toyc "$c_file" --mode ir --output "$IR_OUT" 2>/dev/null; then
+  echo "✅ LLVM IR generated successfully"
+  echo "   Saved to: $IR_OUT"
+  echo ""
+  echo "LLVM IR Output:"
+  cat "$IR_OUT"
+  echo ""
+else
+  echo "❌ LLVM IR generation failed"
+  exit 1
+fi
+
+# Step 3: 生成 RISC-V Assembly (从 IR)
 echo "─────────────────────────────────────────"
-echo "Step 3: Displaying outputs..."
+echo "Step 3: Generating RISC-V Assembly from IR..."
 echo ""
+if ./toyc "$IR_OUT" --mode asm --output "$ASM_OUT" 2>/dev/null; then
+  echo "✅ Assembly generated successfully"
+  echo "   Saved to: $ASM_OUT"
+  echo ""
+  echo "Assembly Output:"
+  cat "$ASM_OUT"
+  echo ""
+else
+  echo "❌ Assembly generation failed"
+  exit 1
+fi
 
-# 显示完整输出
-cat "$ALL_OUT"
-
-echo ""
 echo "========================================="
 echo "  Debug Output Summary"
 echo "========================================="
-echo "All outputs combined: $ALL_OUT"
-if [[ -f "$AST_OUT" ]]; then
-  echo "AST only:            $AST_OUT"
-fi
-if [[ -f "$IR_OUT" ]] && [[ -s "$IR_OUT" ]]; then
-  echo "LLVM IR only:        $IR_OUT"
-fi
-if [[ -f "$ASM_OUT" ]] && [[ -s "$ASM_OUT" ]]; then
-  echo "Assembly only:       $ASM_OUT"
-fi
+
+# Step 4: 生成 Clang 输出用于对比
+echo "─────────────────────────────────────────"
+echo "Step 4: Generating Clang outputs for comparison..."
 echo ""
 
-# 为验证准备汇编文件
-echo "─────────────────────────────────────────"
-echo "Step 4: Preparing for verification..."
-ASM_DIR="test/asm"
-IR_DIR="test/ir"
-mkdir -p "$ASM_DIR" "$IR_DIR"
-
-# 直接使用编译器生成汇编和IR文件到测试目录
-echo "Generating ToyC outputs..."
-if ./toyc "$c_file" --mode asm --output "$ASM_DIR/${base}_toyc.s" 2>/dev/null; then
-  echo "✅ ToyC assembly: $ASM_DIR/${base}_toyc.s"
-else
-  echo "⚠ ToyC assembly generation failed"
-fi
-
-if ./toyc "$c_file" --mode ir --output "$IR_DIR/${base}_toyc.ll" 2>/dev/null; then
-  echo "✅ ToyC IR: $IR_DIR/${base}_toyc.ll"
-else
-  echo "⚠ ToyC IR generation failed"
-fi
-
-# 使用Clang生成对比汇编和IR
-echo "Generating Clang outputs for comparison..."
-if clang --target=riscv32 -march=rv32im -mabi=ilp32 -S "$c_file" -o "$ASM_DIR/${base}_clang.s" 2>/dev/null; then
-  echo "✅ Clang assembly: $ASM_DIR/${base}_clang.s"
-else
-  echo "⚠ Clang assembly generation failed"
-fi
-
-if clang -S -emit-llvm -O0 "$c_file" -o "$IR_DIR/${base}_clang.ll" 2>/dev/null; then
-  echo "✅ Clang IR: $IR_DIR/${base}_clang.ll"
+# 生成 Clang IR
+if clang -S -emit-llvm -O0 "$c_file" -o "$CLANG_IR_OUT" 2>/dev/null; then
+  echo "✅ Clang IR generated successfully"
+  echo "   Saved to: $CLANG_IR_OUT"
 else
   echo "⚠ Clang IR generation failed"
 fi
 
+# 生成 Clang 汇编
+if clang --target=riscv32 -march=rv32im -mabi=ilp32 -S "$c_file" -o "$CLANG_ASM_OUT" 2>/dev/null; then
+  echo "✅ Clang assembly generated successfully"
+  echo "   Saved to: $CLANG_ASM_OUT"
+else
+  echo "⚠ Clang assembly generation failed"
+fi
+
+echo ""
+echo "========================================="
+echo "  Debug Files Generated"
+echo "========================================="
+echo "ToyC Outputs:"
+echo "  AST:       $AST_OUT"
+echo "  LLVM IR:   $IR_OUT"
+echo "  Assembly:  $ASM_OUT"
+echo ""
+echo "Clang Outputs (for comparison):"
+echo "  LLVM IR:   $CLANG_IR_OUT"
+echo "  Assembly:  $CLANG_ASM_OUT"
+echo ""
+
+# 为验证准备汇编文件
+echo "─────────────────────────────────────────"
+echo "Step 5: Preparing for verification..."
+ASM_DIR="test/asm"
+IR_DIR="test/ir"
+mkdir -p "$ASM_DIR" "$IR_DIR"
+
+# 复制生成的文件到测试目录
+echo "Copying outputs to test directories..."
+if [[ -f "$ASM_OUT" ]] && [[ -s "$ASM_OUT" ]]; then
+  cp "$ASM_OUT" "$ASM_DIR/${base}_toyc.s"
+  echo "✅ ToyC assembly: $ASM_DIR/${base}_toyc.s"
+else
+  echo "⚠ ToyC assembly not available"
+fi
+
+if [[ -f "$IR_OUT" ]] && [[ -s "$IR_OUT" ]]; then
+  cp "$IR_OUT" "$IR_DIR/${base}_toyc.ll"
+  echo "✅ ToyC IR: $IR_DIR/${base}_toyc.ll"
+else
+  echo "⚠ ToyC IR not available"
+fi
+
+# 复制 Clang 输出到测试目录
+if [[ -f "$CLANG_ASM_OUT" ]] && [[ -s "$CLANG_ASM_OUT" ]]; then
+  cp "$CLANG_ASM_OUT" "$ASM_DIR/${base}_clang.s"
+  echo "✅ Clang assembly: $ASM_DIR/${base}_clang.s"
+else
+  echo "⚠ Clang assembly not available"
+fi
+
+if [[ -f "$CLANG_IR_OUT" ]] && [[ -s "$CLANG_IR_OUT" ]]; then
+  cp "$CLANG_IR_OUT" "$IR_DIR/${base}_clang.ll"
+  echo "✅ Clang IR: $IR_DIR/${base}_clang.ll"
+else
+  echo "⚠ Clang IR not available"
+fi
+
 echo ""
 echo "─────────────────────────────────────────"
-echo "Step 5: Running verification..."
+echo "Step 6: Running verification..."
 echo ""
 
 # 获取脚本所在目录

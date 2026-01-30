@@ -841,7 +841,7 @@ void RISCVGenerator::generateReturn(const std::string &value)
         std::string valueReg = parseOperand(value);
         addInstruction("	mv	a0, " + valueReg);
     }
-    
+
     // 生成栈帧回收和返回指令
     addInstruction("__STACK_FRAME_DEALLOCATION_PLACEHOLDER__");
     addInstruction("	ret");
@@ -1027,6 +1027,20 @@ std::string RISCVGenerator::parseOperand(const std::string &operand)
     {
         // 虚拟寄存器，直接调用parseRegUse
         return parseRegUse(operand);
+    }
+    else if (operand == "false" || operand == "true")
+    {
+        // 布尔字面量 - 转换为 0 或 1
+        int imm = (operand == "true") ? 1 : 0;
+        auto allocator = functionAllocators[currentFunction].get();
+        int tempReg = allocator->allocateSpillTempReg();
+        if (tempReg != -1)
+        {
+            std::string temp = regInfo.getReg(tempReg).name;
+            addInstruction("	li	" + temp + ", " + std::to_string(imm));
+            return temp;
+        }
+        return "t0"; // 回退
     }
     else if (operand.find_first_not_of("0123456789-") == std::string::npos)
     {

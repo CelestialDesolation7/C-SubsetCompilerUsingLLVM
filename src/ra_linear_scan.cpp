@@ -837,7 +837,7 @@ namespace ra_ls
         result = runLinearScan(intervals);
 
         // 6. 计算指令位置的虚拟寄存器瞬时位置
-        computeInstrVregLocations(F);
+        // computeInstrVregLocations(F);
 
         return result;
     }
@@ -992,6 +992,25 @@ namespace ra_ls
      * @brief 在区间处执行溢出
      * @param interval 当前区间
      */
+     void LinearScanAllocator::spillAtInterval(LiveInterval &interval)
+    {
+        // 简化策略：总是溢出当前区间
+        // 这保证了"每个vreg位置固定"的不变量
+        int spillSlot = allocateSpillSlot();
+        interval.spillSlot = spillSlot;
+        result.vregToPhys[interval.vreg] = -1;
+        result.vregToStack[interval.vreg] = spillSlot;
+
+        if (debugMode)
+        {
+            *debugOutput << "  溢出区间 %" << interval.vreg 
+                        << " 到栈偏移 " << spillSlot << std::endl;
+        }
+    }
+
+    /*
+    // 复杂策略：选择溢出候选
+     这种策略可能会导致同一虚拟寄存器在不同位置使用不同的物理寄存器，违反"每个vreg位置固定"的不变量
     void LinearScanAllocator::spillAtInterval(LiveInterval &interval)
     {
         if (active.empty())
@@ -1054,6 +1073,7 @@ namespace ra_ls
             }
         }
     }
+    */
 
     /**
      * @brief 选择溢出候选区间

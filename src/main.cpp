@@ -147,7 +147,7 @@ int main(int argc, char **argv)
                 outputBuffer << "=== Abstract Syntax Tree ===\n";
                 for (auto &f : funcs)
                 {
-                    f->print(0);
+                    f->print(0, outputBuffer);
                     outputBuffer << "\n";
                 }
                 outputBuffer << "\n";

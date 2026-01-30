@@ -42,6 +42,10 @@ clean:
 TEST_SRC_DIR ?= examples/compiler_inputs
 
 test: build
+	@echo ""
+	@echo "Cleaning test directories..."
+	@rm -rf test/asm/* test/ir/* 2>/dev/null || true
+	@mkdir -p test/asm test/ir
 	@echo "Running tests on: $(TEST_SRC_DIR)"
 	@if [ -f "scripts/generate_asm.sh" ]; then \
 		bash scripts/generate_asm.sh "$(TEST_SRC_DIR)"; \
@@ -60,6 +64,9 @@ test: build
 
 verify: build
 	@echo ""
+	@echo "Cleaning test directories..."
+	@rm -rf test/asm/* test/ir/* 2>/dev/null || true
+	@mkdir -p test/asm test/ir
 	@if [ -z "$(FILE)" ]; then \
 		echo "Running full test suite..."; \
 		if [ -f "scripts/generate_asm.sh" ]; then \
@@ -70,7 +77,6 @@ verify: build
 		fi; \
 	else \
 		echo "Compiling single file: $(FILE)"; \
-		mkdir -p test/asm test/ir; \
 		FILE_PATH="$(TEST_SRC_DIR)/$(FILE)"; \
 		if echo "$(FILE)" | grep -q "/"; then \
 			FILE_PATH="$(FILE)"; \
@@ -88,7 +94,7 @@ verify: build
 			bash scripts/verify_output.sh "$(TEST_SRC_DIR)" "$(FILE)"; \
 		else \
 			bash scripts/verify_output.sh "$(TEST_SRC_DIR)"; \
-		fi \
+		fi; \
 	else \
 		echo "Error: scripts/verify_output.sh not found"; \
 		exit 1; \

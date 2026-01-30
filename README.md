@@ -114,7 +114,16 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 
 ## 支持的语言特性
 
+- **标识符**：终结符 ID 识别符合 C 规范的标识符。其正则表达式为：`[_A-Za-z][_A-Za-z0-9]*`
+- **整数**：终结符 NUMBER 识别十进制整数常量。其正则表达式为：`-?(0|[1-9][0-9]*)`
+- **空白字符和注释**：
+	- 忽略空白字符和注释。空白字符包括空格、制表符、换行符等；
+	- 注释的规范与 C 语言一致：
+		单行注释以 “//” 开始、到最近的换行符前结束，多行注释以 “/*” 开始、以最近的 “*/” 结束。
+
 ![image-20260127205519141](assets/image-20260127205519141.png)
+
+![image-20260130132127243](assets/image-20260130132127243.png)
 
 ### 数据类型
 - `int` - 32 位有符号整数
@@ -235,6 +244,31 @@ cat test.c | ./toyc --mode asm
 
 ## 批量测试
 
+### 特性说明
+
+- **错误处理**: 编译失败的文件会被标记为 FAILED，但不会中断测试流程，其他文件会继续测试
+- **智能验证**: 只验证成功编译的文件，失败的文件会被跳过并在统计中显示
+- **详细输出**: 显示每个阶段的编译结果、错误信息和最终统计
+- **阶段报告**: 编译失败时会报告具体在哪个阶段失败（解析、IR生成、汇编生成等）
+- **无空文件**: 编译失败不会创建空的输出文件，保持文件系统整洁
+
+### 编译错误报告
+
+当编译失败时，编译器会报告失败的具体阶段：
+
+```bash
+$ ./toyc examples/spec/test_logic.c --mode asm
+Error: Compilation failed at stage: generating RISC-V assembly
+Details: stoi
+```
+
+支持的阶段包括：
+- `reading input` - 读取源文件
+- `parsing (lexical and syntax analysis)` - 词法和语法分析
+- `generating LLVM IR` - LLVM IR 代码生成
+- `generating RISC-V assembly` - RISC-V 汇编代码生成
+- `writing output` - 写入输出文件
+
 ### 默认测试（测试 examples/compiler_inputs）
 
 ```bash
@@ -254,6 +288,8 @@ test/
     └── ...
 ```
 
+**注意**: 如果某个文件编译失败，会显示 "FAILED (compilation error)"，但测试会继续进行。
+
 ### 测试自定义目录
 
 ```bash
@@ -261,7 +297,9 @@ test/
 make test TEST_SRC_DIR=path/to/your/test/folder
 
 # 例如
+make test TEST_SRC_DIR=examples/single_func
 make test TEST_SRC_DIR=examples/multi_func
+make test TEST_SRC_DIR=examples/spec
 ```
 
 ### 仅生成汇编或 IR
@@ -279,26 +317,46 @@ bash scripts/generate_asm.sh examples/single_func
 
 ### 验证输出结果
 
+验证功能会编译 ToyC 和 Clang 生成的汇编代码，并在 QEMU 中运行对比结果。
+
 ```bash
-# 验证默认目录
+# 验证默认目录（examples/compiler_inputs）
 make verify
 
 # 验证自定义目录
 make verify TEST_SRC_DIR=<your_directory>
 
-# 验证单个文件
+# 验证单个文件（推荐用于调试特定文件）
 make verify FILE=<filename.c>
 make verify TEST_SRC_DIR=examples/single_func FILE=test_call.c
 
 # 示例
 make verify TEST_SRC_DIR=examples/single_func
 make verify TEST_SRC_DIR=examples/multi_func
-make verify FILE=01_minimal.c
+make verify FILE=01_minimal.c                          # 从默认目录
+make verify FILE=examples/spec/test_fact.c             # 带路径的文件名
 ```
+
+**验证输出示例**:
+```
+=========================================
+  Verification Summary
+=========================================
+Total files:  10
+Passed:       7 ✅
+Failed:       1 ❌
+Skipped:      2 ⚠
+
+✅ All runnable tests passed (some files skipped due to compilation errors)
+```
+
+- **Passed**: 输出结果与 Clang 完全一致
+- **Failed**: 退出码或输出不匹配
+- **Skipped**: 编译失败，无法验证
 
 ### 调试模式验证
 
-调试模式可以输出编译的所有中间产物（AST、LLVM IR、汇编代码），便于学习和调试：
+调试模式**逐步显示**编译的所有中间产物（AST、LLVM IR、汇编代码），并在最后进行验证：
 
 ```bash
 # 必须指定文件名
@@ -310,13 +368,25 @@ make verify-debug TEST_SRC_DIR=examples/single_func FILE=test_call.c
 # 示例
 make verify-debug FILE=01_minimal.c
 make verify-debug FILE=09_recursion.c
+make verify-debug FILE=examples/spec/test_fact.c       # 带路径的文件名
 ```
 
+**调试模式输出流程**:
+1. **Step 1**: 生成并显示 AST（抽象语法树）
+2. **Step 2**: 生成并显示 LLVM IR
+3. **Step 3**: 从 IR 生成并显示 RISC-V 汇编
+4. **Step 4**: 准备验证文件（复制到 test/ 目录）
+5. **Step 5**: 运行验证，与 Clang 输出对比
+
 调试模式会在 `test/debug/` 目录下生成：
-- `<filename>_all.txt` - 包含所有中间产物的完整输出
 - `<filename>_ast.txt` - 抽象语法树
 - `<filename>_ir.ll` - LLVM IR
 - `<filename>_asm.s` - RISC-V 汇编代码
+
+**使用场景**:
+- 学习编译器各阶段的输出格式
+- 调试特定文件的编译问题
+- 查看编译过程的详细信息
 
 ### 清理输出
 
@@ -325,7 +395,7 @@ make verify-debug FILE=09_recursion.c
 make clean
 
 # 清理测试输出
-rm -rf test/asm test/ir
+rm -rf test/asm test/ir test/debug
 ```
 
 ### 输出位置
@@ -342,33 +412,178 @@ test/
 │   ├── <file1>_toyc.ll
 │   ├── <file1>_clang.ll
 │   └── ...
-└── debug/        # 调试模式输出
-    ├── <file>_all.txt
-    ├── <file>_ast.txt
-    ├── <file>_ir.ll
-    └── <file>_asm.s
+├── debug/        # 调试模式输出（仅 make verify-debug）
+│   ├── <file>_ast.txt
+│   ├── <file>_ir.ll
+│   └── <file>_asm.s
+└── verify_temp/  # 验证时的临时文件（可忽略）
 ```
 
 ---
 
 ## 测试用例说明
 
-当前项目包含以下测试用例（位于 `examples/compiler_inputs/`）：
+项目包含多个测试集，覆盖不同的语言特性和使用场景。
 
-| 文件                         | 测试功能            |
-| ---------------------------- | ------------------- |
-| `01_minimal.c`               | 最小程序（空 main） |
-| `02_assignment.c`            | 变量赋值            |
-| `03_if_else.c`               | if-else 条件语句    |
-| `04_while_break.c`           | while 循环和 break  |
-| `05_function_call.c`         | 函数调用            |
-| `06_continue.c`              | continue 语句       |
-| `07_scope_shadow.c`          | 作用域和变量遮蔽    |
-| `08_short_circuit.c`         | 逻辑短路求值        |
-| `09_recursion.c`             | 递归函数            |
-| `10_void_fn.c`               | void 函数           |
-| `11_precedence.c`            | 运算符优先级        |
-| `12_division_check.c`        | 除法检查            |
-| `13_scope_block.c`           | 块作用域            |
-| `14_nested_if_while.c`       | 嵌套控制流          |
-| `15_multiple_return_paths.c` | 多返回路径          |
+### 主测试集（examples/compiler_inputs/）
+
+基础功能测试，包含 24 个测试用例：
+
+| 文件                         | 测试功能             |
+| ---------------------------- | -------------------- |
+| `01_minimal.c`               | 最小程序（空 main）  |
+| `02_assignment.c`            | 变量赋值             |
+| `03_if_else.c`               | if-else 条件语句     |
+| `04_while_break.c`           | while 循环和 break   |
+| `05_function_call.c`         | 函数调用             |
+| `06_continue.c`              | continue 语句        |
+| `07_scope_shadow.c`          | 作用域和变量遮蔽     |
+| `08_short_circuit.c`         | 逻辑短路求值         |
+| `09_recursion.c`             | 递归函数（斐波那契） |
+| `10_void_fn.c`               | void 函数            |
+| `11_precedence.c`            | 运算符优先级         |
+| `12_division_check.c`        | 除法和取模运算       |
+| `13_scope_block.c`           | 块作用域             |
+| `14_nested_if_while.c`       | 嵌套控制流           |
+| `15_multiple_return_paths.c` | 多返回路径           |
+| `16_test_multiple_funcs.c`   | 多函数               |
+| `17_test_nested_loops.c`     | 嵌套循环             |
+| `18_test_break_continue.c`   | break 和 continue    |
+| `19_test_call.c`             | 函数调用             |
+| `20_test_if.c`               | if 语句              |
+| `21_test_mod_ops.c`          | 取模运算             |
+| `22_test_nested_block.c`     | 嵌套块作用域         |
+| `23_test_void.c`             | void 函数            |
+| `24_test_while.c`            | while 循环           |
+
+### 使用示例
+
+```bash
+# 测试主测试集
+make verify
+
+# 测试单函数集
+make verify TEST_SRC_DIR=examples/single_func
+
+# 测试规范集
+make verify TEST_SRC_DIR=examples/spec
+
+# 调试特定文件
+make verify-debug FILE=examples/spec/test_fact.c
+```
+
+---
+
+## 实用技巧
+
+### 快速检查单个文件
+
+```bash
+# 只编译不验证
+./toyc examples/compiler_inputs/01_minimal.c --mode asm
+
+# 编译并验证
+make verify FILE=01_minimal.c
+
+# 查看详细的编译过程
+make verify-debug FILE=01_minimal.c
+```
+
+### 对比不同目录的测试结果
+
+```bash
+# 测试并记录结果
+make verify TEST_SRC_DIR=examples/compiler_inputs 2>&1 | tee result_inputs.txt
+make verify TEST_SRC_DIR=examples/single_func 2>&1 | tee result_single.txt
+make verify TEST_SRC_DIR=examples/spec 2>&1 | tee result_spec.txt
+```
+
+### 查找编译失败的文件
+
+```bash
+# 批量测试后查看哪些文件编译失败
+make verify TEST_SRC_DIR=examples/single_func 2>&1 | grep "SKIPPED"
+```
+
+### 性能测试
+
+```bash
+# 测量编译时间
+time ./toyc examples/compiler_inputs/09_recursion.c --mode asm > /dev/null
+
+# 批量测试性能
+time make test TEST_SRC_DIR=examples/compiler_inputs
+```
+
+---
+
+## 常见问题
+
+### Q: 编译失败但没有详细错误信息？
+
+A: 使用 `make verify-debug` 查看详细的编译过程和失败阶段：
+```bash
+make verify-debug FILE=<your_file.c>
+```
+
+### Q: 如何添加自己的测试用例？
+
+A: 将 `.c` 文件放入任意目录，然后使用 `TEST_SRC_DIR` 参数测试：
+```bash
+mkdir my_tests
+# 将你的 .c 文件放入 my_tests/
+make verify TEST_SRC_DIR=my_tests
+```
+
+### Q: 验证失败是什么原因？
+
+A: 验证失败通常有以下原因：
+- **退出码不匹配**: ToyC 生成的程序退出码与 Clang 不同
+- **输出不一致**: 程序的标准输出与预期不符
+- **汇编编译失败**: 生成的汇编代码有语法错误
+
+使用 `make verify-debug` 查看详细信息，检查 `test/asm/` 下的汇编文件。
+
+### Q: 如何清理所有测试文件？
+
+A: 
+```bash
+make clean                    # 清理编译产物
+rm -rf test/                  # 清理所有测试输出
+```
+
+---
+
+## 项目结构
+
+```
+C-SubsetCompilerUsingLLVM/
+├── Makefile                  # 构建配置
+├── README.md                 # 本文档
+├── toyc                      # 编译器可执行文件（编译后生成）
+├── src/                      # 源代码
+│   ├── main.cpp              # 主程序入口
+│   ├── lexer.cpp             # 词法分析器
+│   ├── parser.cpp            # 语法分析器
+│   ├── ast.cpp               # AST 节点实现
+│   ├── llvm_ir.cpp           # LLVM IR 生成
+│   ├── riscv_gen.cpp         # RISC-V 汇编生成
+│   ├── ra_linear_scan.cpp    # 寄存器分配
+│   └── include/              # 头文件
+├── scripts/                  # 测试脚本
+│   ├── generate_asm.sh       # 批量生成汇编
+│   ├── generate_ir.sh        # 批量生成 IR
+│   ├── verify_output.sh      # 验证输出
+│   ├── verify_debug.sh       # 调试模式验证
+│   └── crt0.s                # 启动代码
+├── examples/                 # 测试用例
+│   ├── compiler_inputs/      # 主测试集
+│   ├── single_func/          # 单函数测试
+│   └── spec/                 # 规范测试
+├── test/                     # 测试输出（自动生成）
+│   ├── asm/                  # 汇编文件
+│   ├── ir/                   # LLVM IR 文件
+│   └── debug/                # 调试输出
+├── docs/                     # 技术文档
+└── build/                    # 编译中间文件
+```

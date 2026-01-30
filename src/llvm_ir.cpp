@@ -3,7 +3,7 @@
 #include <algorithm>
 
 LLVMIRGenerator::LLVMIRGenerator()
-    : tempCount(0), labelCount(0), stackOffset(0), currentInstructions(""), hasReturn(false), varCount(0), isMainFunction(false)
+    : varCount(0), labelCount(0), stackOffset(0), currentInstructions(""), hasReturn(false), isMainFunction(false)
 {
     // 初始化全局作用域
     enterScope();
@@ -55,11 +55,6 @@ std::string LLVMIRGenerator::newLabel(const std::string &base)
     return base + "_" + std::to_string(labelCount);
 }
 
-std::string LLVMIRGenerator::newVar()
-{
-    return std::to_string(++varCount);
-}
-
 std::string LLVMIRGenerator::getVariableOffset(const std::string &name)
 {
     return findVariable(name);
@@ -97,9 +92,8 @@ std::string LLVMIRGenerator::generateParams(const std::vector<Param> &params)
 std::string LLVMIRGenerator::generateFunction(const std::shared_ptr<FuncDef> &funcDef)
 {
     // 重置状态
-    tempCount = 0;
     labelCount = 0;
-    varCount = funcDef->params.size();
+    varCount = funcDef->params.size(); // 参数占用 %0, %1, ... 编号
     scopeStack.clear();
     enterScope(); // 创建函数作用域
     loadedValues.clear();
@@ -135,10 +129,10 @@ std::string LLVMIRGenerator::generateFunction(const std::shared_ptr<FuncDef> &fu
     // 1) main 的返回值变量
     if (isMainFunction)
     {
-        std::string retVar = newVar();
+        std::string retVar = newTemp(); // 返回带%前缀的完整寄存器名
         addVariable(funcDef->name + "_ret", retVar);
-        allocas.push_back("%" + retVar + " = alloca i32, align 4");
-        initStores.push_back("store i32 0, ptr %" + retVar + ", align 4");
+        allocas.push_back(retVar + " = alloca i32, align 4");
+        initStores.push_back("store i32 0, ptr " + retVar + ", align 4");
     }
 
     // 2) 参数的 alloca + store
@@ -146,12 +140,12 @@ std::string LLVMIRGenerator::generateFunction(const std::shared_ptr<FuncDef> &fu
     {
         std::string irName = funcDef->params[i].name;
         std::string orig = origNames[i];
-        std::string slot = newVar();
+        std::string slot = newTemp(); // 返回带%前缀的完整寄存器名
 
-        allocas.push_back("%" + slot + " = alloca i32, align 4");
-        initStores.push_back("store i32 %" + irName + ", ptr %" + slot + ", align 4");
+        allocas.push_back(slot + " = alloca i32, align 4");
+        initStores.push_back("store i32 %" + irName + ", ptr " + slot + ", align 4");
 
-        // 建立 IR 名称 -> alloca 插槽 的映射
+        // 建立 IR 名称 -> alloca 插槽 的映射（slot 已带%前缀）
         addVariable(irName, slot);
         addVariable(orig, slot);
     }
@@ -230,8 +224,9 @@ std::string LLVMIRGenerator::generateExpr(const ASTPtr &expr)
             }
 
             // 首次加载，生成load指令并缓存
+            // varName 已经带%前缀，如 "%3"
             std::string temp = newTemp();
-            addInstruction(temp + " = load i32, ptr %" + varName + ", align 4");
+            addInstruction(temp + " = load i32, ptr " + varName + ", align 4");
             loadedValues[idExpr->name] = temp;
             return temp;
         }
@@ -262,38 +257,37 @@ std::string LLVMIRGenerator::generateExpr(const ASTPtr &expr)
 
 std::string LLVMIRGenerator::generateBinaryOp(const std::string &op, const ASTPtr &lhs, const ASTPtr &rhs)
 {
+    // 逻辑运算需要特殊处理（短路求值），不能预先计算两边的表达式
+    if (op == "&&" || op == "||")
+    {
+        return generateLogicalOp(op, lhs, rhs);
+    }
+
+    // 比较运算也有自己的处理逻辑
+    if (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=")
+    {
+        return generateComparison(op, lhs, rhs);
+    }
+
+    // 算术运算：先计算两边的表达式
     std::string lhsTemp = generateExpr(lhs);
     std::string rhsTemp = generateExpr(rhs);
     std::string result = newTemp();
 
-    if (op == "&&" || op == "||")
-    {
-        // 逻辑运算需要特殊处理
-        return generateLogicalOp(op, lhs, rhs);
-    }
-    else if (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=")
-    {
-        // 比较运算
-        return generateComparison(op, lhs, rhs);
-    }
-    else
-    {
-        // 算术运算
-        std::string llvmOp;
-        if (op == "+")
-            llvmOp = "add";
-        else if (op == "-")
-            llvmOp = "sub";
-        else if (op == "*")
-            llvmOp = "mul";
-        else if (op == "/")
-            llvmOp = "sdiv";
-        else if (op == "%")
-            llvmOp = "srem";
+    std::string llvmOp;
+    if (op == "+")
+        llvmOp = "add";
+    else if (op == "-")
+        llvmOp = "sub";
+    else if (op == "*")
+        llvmOp = "mul";
+    else if (op == "/")
+        llvmOp = "sdiv";
+    else if (op == "%")
+        llvmOp = "srem";
 
-        addInstruction(result + " = " + llvmOp + " nsw i32 " + lhsTemp + ", " + rhsTemp);
-        return result;
-    }
+    addInstruction(result + " = " + llvmOp + " nsw i32 " + lhsTemp + ", " + rhsTemp);
+    return result;
 }
 
 std::string LLVMIRGenerator::generateUnaryOp(const std::string &op, const ASTPtr &expr)
@@ -355,8 +349,8 @@ std::string LLVMIRGenerator::generateComparison(const std::string &op, const AST
 
 std::string LLVMIRGenerator::generateLogicalOp(const std::string &op, const ASTPtr &lhs, const ASTPtr &rhs)
 {
-    // 为短路逻辑创建结果变量
-    std::string resultVar = newVar();
+    // 为短路逻辑创建结果变量（newTemp 返回带%前缀的完整寄存器名）
+    std::string resultVar = newTemp();
     addInstruction(resultVar + " = alloca i1, align 1");
 
     if (op == "&&")
@@ -504,7 +498,8 @@ void LLVMIRGenerator::generateAssign(const std::shared_ptr<AssignStmt> &assign)
 
     if (!varName.empty())
     {
-        addInstruction("store i32 " + value + ", ptr %" + varName + ", align 4");
+        // varName 已经带%前缀，如 "%3"
+        addInstruction("store i32 " + value + ", ptr " + varName + ", align 4");
         // 清除该变量的缓存，因为值已经改变
         loadedValues.erase(assign->name);
     }
@@ -518,16 +513,16 @@ void LLVMIRGenerator::generateAssign(const std::shared_ptr<AssignStmt> &assign)
 void LLVMIRGenerator::generateDecl(const std::shared_ptr<DeclStmt> &decl)
 {
     std::string val = generateExpr(decl->expr);
-    std::string varName = newVar();
+    std::string varName = newTemp(); // 返回带%前缀的完整寄存器名，如 "%3"
 
     // 为变量分配空间
-    addInstruction("%" + varName + " = alloca i32, align 4");
+    addInstruction(varName + " = alloca i32, align 4");
 
-    // 将变量添加到当前作用域
+    // 将变量添加到当前作用域（varName 已带%前缀）
     addVariable(decl->name, varName);
 
     // 存储初始值
-    addInstruction("store i32 " + val + ", ptr %" + varName + ", align 4");
+    addInstruction("store i32 " + val + ", ptr " + varName + ", align 4");
     loadedValues.erase(decl->name);
 }
 
