@@ -1,116 +1,83 @@
-# ToyC 编译器 Makefile
-SHELL := /bin/bash
+# ─── CMake 包装器 Makefile ──────────────────────────────────────
+#
+# 常用指令:
+#   make              编译项目（Windows MinGW / WSL 均可）
+#   make test         运行 36 个内置单元测试
+#   make generate-asm 批量生成 ToyC + Clang 汇编（需 WSL 中的 clang）
+#   make generate-ir  批量生成 ToyC + Clang LLVM IR
+#   make verify       端到端验证：生成汇编 → Clang 链接 → QEMU 运行 → 对比结果
+#   make debug FILE=01_minimal.c   单文件调试：输出 AST / IR / ASM 及验证
+#   make clean        清理构建与测试产物
+#
+# 前置条件:
+#   - CMake ≥ 3.16,  g++ ≥ 13 (C++20)
+#   - WSL 中安装 clang (RISC-V 后端), qemu-user
+#     sudo apt install clang qemu-user
+# ─────────────────────────────────────────────────────────────────
 
-CXX := g++
-CXXFLAGS := -std=c++20 -O2 -Wall
-SRC_DIR := src
 BUILD_DIR := build
-TARGET := toyc
-UNIFIED_TEST_TARGET := unified_test
+SRC_DIR   := examples/compiler_inputs
 
-# 主编译器源文件（排除unified_test.cpp）
-MAIN_SRCS := $(filter-out $(SRC_DIR)/unified_test.cpp, $(wildcard $(SRC_DIR)/*.cpp))
-MAIN_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(MAIN_SRCS))
-
-# unified_test 需要的源文件
-UNIFIED_TEST_SRCS := $(SRC_DIR)/unified_test.cpp $(SRC_DIR)/ra_linear_scan.cpp
-UNIFIED_TEST_OBJS := $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(UNIFIED_TEST_SRCS))
-
-.PHONY: all clean test build unified_test verify
+.PHONY: all build test generate-asm generate-ir verify debug clean rebuild help
 
 all: build
 
-build: $(TARGET)
+# ---------- 编译 ----------
+build:
+	@cmake -S . -B $(BUILD_DIR) -G Ninja 2>/dev/null \
+	 || cmake -S . -B $(BUILD_DIR) -G "MinGW Makefiles" 2>/dev/null \
+	 || cmake -S . -B $(BUILD_DIR)
+	@cmake --build $(BUILD_DIR) --parallel
 
-$(TARGET): $(MAIN_OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
-
-unified_test: $(UNIFIED_TEST_TARGET)
-
-$(UNIFIED_TEST_TARGET): $(UNIFIED_TEST_OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
-
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@mkdir -p $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-clean:
-	rm -rf $(BUILD_DIR) $(TARGET) $(UNIFIED_TEST_TARGET)
-	rm -rf test
-
-# 默认测试目录
-TEST_SRC_DIR ?= examples/compiler_inputs
-
+# ---------- 内置测试（不需要 WSL） ----------
 test: build
-	@echo ""
-	@echo "Cleaning test directories..."
-	@rm -rf test/asm/* test/ir/* 2>/dev/null || true
-	@mkdir -p test/asm test/ir
-	@echo "Running tests on: $(TEST_SRC_DIR)"
-	@if [ -f "scripts/generate_asm.sh" ]; then \
-		bash scripts/generate_asm.sh "$(TEST_SRC_DIR)"; \
-	else \
-		echo "Error: scripts/generate_asm.sh not found"; \
-		exit 1; \
-	fi
-	@if [ -f "scripts/generate_ir.sh" ]; then \
-		bash scripts/generate_ir.sh "$(TEST_SRC_DIR)"; \
-	else \
-		echo "Error: scripts/generate_ir.sh not found"; \
-		exit 1; \
-	fi
-	@echo "Tests completed successfully!"
-	@echo "Output: test/asm/ and test/ir/"
+	@./$(BUILD_DIR)/toyc_test $(SRC_DIR)
 
-verify: build
-	@echo ""
-	@echo "Cleaning test directories..."
-	@rm -rf test/asm/* test/ir/* 2>/dev/null || true
-	@mkdir -p test/asm test/ir
+# ---------- 批量汇编生成（在 WSL 中运行） ----------
+generate-asm: build
+	@bash scripts/generate_asm.sh $(SRC_DIR)
+
+# ---------- 批量 IR 生成（在 WSL 中运行） ----------
+generate-ir: build
+	@bash scripts/generate_ir.sh $(SRC_DIR)
+
+# ---------- 端到端验证（在 WSL 中运行，需 clang + qemu） ----------
+verify: generate-asm
+	@bash scripts/verify_output.sh $(SRC_DIR)
+
+# ---------- 单文件调试（在 WSL 中运行） ----------
+# 用法: make debug FILE=01_minimal.c
+debug: build
 	@if [ -z "$(FILE)" ]; then \
-		echo "Running full test suite..."; \
-		if [ -f "scripts/generate_asm.sh" ]; then \
-			bash scripts/generate_asm.sh "$(TEST_SRC_DIR)"; \
-		fi; \
-		if [ -f "scripts/generate_ir.sh" ]; then \
-			bash scripts/generate_ir.sh "$(TEST_SRC_DIR)"; \
-		fi; \
-	else \
-		echo "Compiling single file: $(FILE)"; \
-		FILE_PATH="$(TEST_SRC_DIR)/$(FILE)"; \
-		if echo "$(FILE)" | grep -q "/"; then \
-			FILE_PATH="$(FILE)"; \
-		fi; \
-		BASE_NAME=$$(basename "$$FILE_PATH" .c); \
-		./toyc "$$FILE_PATH" --mode asm --output "test/asm/$${BASE_NAME}_toyc.s"; \
-		clang --target=riscv32 -march=rv32im -mabi=ilp32 -S "$$FILE_PATH" -o "test/asm/$${BASE_NAME}_clang.s"; \
-		./toyc "$$FILE_PATH" --mode ir --output "test/ir/$${BASE_NAME}_toyc.ll"; \
-		clang -S -emit-llvm -O0 "$$FILE_PATH" -o "test/ir/$${BASE_NAME}_clang.ll"; \
+	    echo "Usage: make debug FILE=<filename.c>"; \
+	    echo "Example: make debug FILE=01_minimal.c"; \
+	    exit 1; \
 	fi
-	@echo ""
-	@echo "Running output verification..."
-	@if [ -f "scripts/verify_output.sh" ]; then \
-		if [ -n "$(FILE)" ]; then \
-			bash scripts/verify_output.sh "$(TEST_SRC_DIR)" "$(FILE)"; \
-		else \
-			bash scripts/verify_output.sh "$(TEST_SRC_DIR)"; \
-		fi; \
-	else \
-		echo "Error: scripts/verify_output.sh not found"; \
-		exit 1; \
-	fi
+	@bash scripts/verify_debug.sh $(SRC_DIR) $(FILE)
 
-verify-debug: build
-	@echo ""
-	@echo "Running output verification in DEBUG mode..."
-	@if [ -f "scripts/verify_debug.sh" ]; then \
-		if [ -z "$(FILE)" ]; then \
-			echo "Error: FILE parameter is required for verify-debug"; \
-			echo "Usage: make verify-debug FILE=<filename.c>"; \
-			exit 1; \
-		fi; \
-		bash scripts/verify_debug.sh "$(TEST_SRC_DIR)" "$(FILE)"; \
-	else \
-		echo "Error: scripts/verify_debug.sh not found"; \
-		exit 1; \
-	fi
+# ---------- 清理 ----------
+clean:
+	@rm -rf $(BUILD_DIR) test/
+
+rebuild: clean build
+
+# ---------- 便捷: 单文件编译 ----------
+%.s: $(SRC_DIR)/%.c build
+	@./$(BUILD_DIR)/toyc $< --asm
+
+%.ll: $(SRC_DIR)/%.c build
+	@./$(BUILD_DIR)/toyc $< --ir
+
+# ---------- 帮助 ----------
+help:
+	@echo "ToyC Compiler - Makefile Targets"
+	@echo "================================"
+	@echo "  make              Build the project"
+	@echo "  make test         Run 36 built-in unit tests"
+	@echo "  make generate-asm Generate ToyC + Clang assembly for all test cases"
+	@echo "  make generate-ir  Generate ToyC + Clang LLVM IR for all test cases"
+	@echo "  make verify       Full end-to-end verification (asm → link → QEMU → diff)"
+	@echo "  make debug FILE=xx.c  Single-file debug (AST / IR / ASM + verify)"
+	@echo "  make clean        Remove build/ and test/ directories"
+	@echo "  make rebuild      Clean then build"
+	@echo "  make help         This message"

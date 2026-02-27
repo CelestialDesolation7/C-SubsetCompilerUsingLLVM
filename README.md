@@ -7,7 +7,8 @@
 - [支持的语言特性](#支持的语言特性)
 - [快速开始](#快速开始)
 - [使用方法](#使用方法)
-- [批量测试](#批量测试)
+- [测试与验证](#测试与验证)
+- [测试用例说明](#测试用例说明)
 - [输出示例](#输出示例)
 - [项目结构](#项目结构)
 - [技术文档](#技术文档)
@@ -21,17 +22,18 @@ ToyC 是一个基于现代编译技术实现的 **C 语言子集编译器**，�
 ### 编译流程
 
 ```
-C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄存器分配 → RISC-V 汇编
+C 源代码 → 词法分析 → 语法分析 → AST → IRBuilder → ir::Module → 寄存器分配 → RISC-V 汇编
 ```
 
 ### 技术栈
 
 - **语言**: C++20
+- **构建系统**: CMake (≥ 3.16) + Ninja / MinGW Makefiles
 - **目标架构**: RISC-V 32-bit (RV32I)
-- **中间表示**: LLVM IR (SSA 形式)
+- **中间表示**: 结构化 LLVM IR (SSA 形式)，具有完整的 Opcode 枚举和类型化指令模型
 - **寄存器分配**: 线性扫描算法
-	（原论文：https://web.cs.ucla.edu/~palsberg/course/cs132/linearscan.pdf）
-	（关于本项目中实现的解释：[线性扫描算法核心思路.md](docs\线性扫描算法核心思路.md)）
+  （原论文：https://web.cs.ucla.edu/~palsberg/course/cs132/linearscan.pdf）
+  （关于本项目中实现的解释：[线性扫描算法核心思路.md](docs/线性扫描算法核心思路.md)）
 
 ---
 
@@ -43,7 +45,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - **手工实现**的高效词法分析器
 - 支持单字符和多字符运算符识别
 - 完整的关键字、标识符、数字字面量处理
-- 支持注释和空白符过滤
+- 支持单行 `//` 和多行 `/* */` 注释
 
 #### 语法分析器 (Parser)
 - **递归下降**解析算法
@@ -56,25 +58,37 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - 支持语法树可视化输出
 - 类型检查和语义分析
 
-### 2. LLVM IR 代码生成
+### 2. 结构化 IR 模型
 
-- **SSA 形式**的中间代码生成
-- 支持 phi 节点自动插入
-- **控制流图 (CFG)** 构建
-- 基本块管理和跳转优化
-- 函数调用约定实现
+采用类似 LLVM 官方项目的 **结构化指令模型**，通过 `Opcode` 枚举和类型化 `Instruction` 类实现：
+
+- **`ir::Opcode` 枚举**: 明确定义所有指令类型 (`Alloca`, `Load`, `Store`, `Add`, `Sub`, `Mul`, `SDiv`, `SRem`, `ICmp`, `Br`, `CondBr`, `Ret`, `RetVoid`, `Call`)
+- **`ir::Operand` 类**: 类型安全的操作数 (`VReg`, `Imm`, `Label`, `BoolLit`)
+- **`ir::Instruction` 工厂方法**: 如 `makeAlloca()`, `makeBinOp()`, `makeICmp()` 等
+- **基于 Opcode 的查询接口**: `defReg()`, `useRegs()`, `isTerminator()`, `branchTargets()` — **无需正则表达式或字符串匹配**
+- **`ir::BasicBlock` / `ir::Function` / `ir::Module`**: 完整的 CFG 构建和管理
+
+#### IRBuilder
+- AST → 结构化 IR 的直接转换
+- 作用域栈管理
 - **短路求值**优化（逻辑运算符 `&&`, `||`）
+- 函数调用约定实现
+
+#### IRParser
+- 文本 LLVM IR → 结构化 `ir::Module` 的解析器
+- 支持从 `.ll` 文件导入
 
 ### 3. 寄存器分配算法
 
-实现了经典的 **线性扫描寄存器分配算法** (Linear Scan Register Allocation)：
+实现了经典的 **线性扫描寄存器分配算法** (Linear Scan Register Allocation)，直接操作结构化 IR：
 
 #### 核心特性
-- **活跃区间计算**: 精确分析变量生命周期
+- **活跃区间计算**: 通过 `ir::Instruction::defReg()` / `useRegs()` 精确分析变量生命周期，无需正则匹配
 - **物理寄存器映射**: 符合 RISC-V 调用约定
-  - `a0-a7`: 参数寄存器
-  - `t0-t6`: 临时寄存器  
-  - `s0-s11`: 保存寄存器
+  - `a0-a7`: 参数寄存器（最高分配优先级）
+  - `t2-t6`: 临时寄存器
+  - `s1-s11`: 保存寄存器
+  - `t0/t1`: 溢出专用临时寄存器
 - **溢出处理**: 自动栈分配和加载/存储生成
 - **参数处理**: 支持多参数函数调用（前 8 个通过寄存器，其余通过栈）
 
@@ -87,12 +101,18 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 
 ### 4. RISC-V 代码生成
 
+基于 **Opcode 分派**的代码生成器，通过 `switch(inst.opcode)` 实现指令级分发：
+
 #### 支持的指令集
-- **算术运算**: `add`, `sub`, `mul`, `div`, `rem`
-- **逻辑运算**: `and`, `or`, `xor`, `not`
+- **算术运算**: `add`, `addi`, `sub`, `mul`, `div`, `rem`
 - **比较运算**: `slt`, `seqz`, `snez`
-- **控制流**: `beq`, `bne`, `blt`, `bge`, `j`, `jal`, `jalr`, `ret`
-- **内存访问**: `lw`, `sw`（字对齐）
+- **控制流**: `beq`, `bne`, `blt`, `bge`, `bgt`, `ble`, `j`, `ret`
+- **内存访问**: `lw`, `sw`, `lb`, `sb`
+
+#### 优化技术
+- **比较-分支融合**: `icmp + condBr` 合并为单条 RISC-V 分支指令
+- **立即数优化**: `add %x, imm` → `addi`
+- **占位符栈帧**: 延迟计算栈大小，支持多返回路径
 
 #### 调用约定
 完全符合 **RISC-V ABI** 规范：
@@ -100,7 +120,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - 返回值：`a0`
 - 返回地址：`ra`
 - 栈指针：`sp`
-- 帧指针：`s0`（可选）
+- 帧指针：`s0`
 
 ### 5. 多种输出模式
 
@@ -119,7 +139,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 - **空白字符和注释**：
 	- 忽略空白字符和注释。空白字符包括空格、制表符、换行符等；
 	- 注释的规范与 C 语言一致：
-		单行注释以 “//” 开始、到最近的换行符前结束，多行注释以 “/*” 开始、以最近的 “*/” 结束。
+		单行注释以 "//" 开始、到最近的换行符前结束，多行注释以 "/*" 开始、以最近的 "*/" 结束。
 
 ![image-20260127205519141](assets/image-20260127205519141.png)
 
@@ -134,7 +154,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 |------|--------|
 | 算术 | `+`, `-`, `*`, `/`, `%` |
 | 比较 | `==`, `!=`, `<`, `>`, `<=`, `>=` |
-| 逻辑 | `&&`, `||`, `!` |
+| 逻辑 | `&&`, `\|\|`, `!` |
 | 一元 | `+`, `-`, `!` |
 | 赋值 | `=` |
 
@@ -148,11 +168,12 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 ### 高级特性
 - ✅ 函数定义和调用
 - ✅ 递归函数支持
-- ✅ 多参数传递
+- ✅ 多参数传递（含超过 8 个参数的栈传递）
 - ✅ 作用域和变量遮蔽
 - ✅ 块级作用域 `{ ... }`
 - ✅ 短路求值优化
 - ✅ 运算符优先级和结合性
+- ✅ 多行/单行注释
 
 ---
 
@@ -160,396 +181,313 @@ C 源代码 → 词法分析 → 语法分析 → AST → LLVM IR 生成 → 寄
 
 ### 环境要求
 
-- **必需**:
-  - g++ (支持 C++20)
-  - make
-  - bash
+**Windows 构建（必需）**:
+- CMake ≥ 3.16
+- g++ ≥ 13（支持 C++20），推荐 MinGW-w64
+- Ninja 或 MinGW Make
 
-- **可选** (用于生成对比输出):
-  - clang
-  - riscv32-unknown-elf-gcc
+**WSL 端到端验证（可选但推荐）**:
+- WSL 2（Ubuntu 推荐）
+- clang（含 RISC-V 后端）
+- qemu-user（RISC-V 用户态模拟器）
+- riscv64-unknown-elf-gcc（可选，提供 libgcc 软件除法支持）
 
-### 安装依赖 (Ubuntu/WSL)
+### 安装 WSL 依赖
 
 ```bash
+# 在 WSL (Ubuntu) 中执行
 sudo apt update
-sudo apt install build-essential clang
+sudo apt install clang qemu-user
+# 可选：安装 RISC-V 工具链以获取 libgcc
+sudo apt install gcc-riscv64-unknown-elf
 ```
 
 ### 编译项目
 
 ```bash
-# 克隆或下载项目后
-cd C-SubsetCompilerUsingLLVM
+# 方式一：使用 Makefile（推荐）
+make
 
-# 构建编译器
-make build
-
-# 或直接运行测试（会自动构建）
-make test
+# 方式二：手动 CMake
+cmake -S . -B build -G Ninja
+cmake --build build --parallel
 ```
+
+编译完成后，可执行文件位于：
+- `build/toyc.exe` — 编译器主程序
+- `build/toyc_test.exe` — 统一测试程序
 
 ---
 
 ## 使用方法
 
-### 命令行选项
+### 命令行接口
 
-```bash
-./toyc <input_file> [options]
+```
+用法: toyc <input.[c|tc|ll]> [options]
+
+选项:
+  --ast         输出抽象语法树
+  --ir          输出 LLVM IR
+  --asm         输出 RISC-V 汇编（默认）
+  --all         输出 AST + IR + 汇编
+  -o <file>     将汇编写入指定文件
 ```
 
-**选项说明**:
-- `--mode <mode>`: 输出模式
-  - `ast` - 抽象语法树
-  - `ir` - LLVM IR
-  - `asm` - RISC-V 汇编 (默认)
-  - `all` - 所有输出
-- `--output <file>`: 输出到文件（默认为 stdout）
-- `--target <arch>`: 目标架构（默认 `riscv32`）
-
-### 示例用法
-
-#### 1. 编译到 RISC-V 汇编
+### 使用示例
 
 ```bash
-./toyc examples/compiler_inputs/01_minimal.c --mode asm
+# 1. 编译到 RISC-V 汇编（默认模式）
+./build/toyc examples/compiler_inputs/01_minimal.c
+
+# 2. 生成 LLVM IR
+./build/toyc examples/compiler_inputs/05_function_call.c --ir
+
+# 3. 查看 AST
+./build/toyc examples/compiler_inputs/03_if_else.c --ast
+
+# 4. 同时查看 AST + IR + 汇编
+./build/toyc examples/compiler_inputs/09_recursion.c --all
+
+# 5. 将汇编输出到文件
+./build/toyc examples/compiler_inputs/09_recursion.c -o output.s
+
+# 6. 从 .ll 文件生成汇编（支持 IR 输入）
+./build/toyc test/ir/01_minimal_toyc.ll --asm
 ```
 
-#### 2. 生成 LLVM IR
+### Makefile 便捷目标
 
 ```bash
-./toyc examples/compiler_inputs/05_function_call.c --mode ir
-```
+# 编译单个文件到汇编（stdout）
+make 01_minimal.s
 
-#### 3. 查看 AST
-
-```bash
-./toyc examples/compiler_inputs/03_if_else.c --mode ast
-```
-
-#### 4. 输出到文件
-
-```bash
-./toyc examples/compiler_inputs/09_recursion.c --mode asm --output fib.s
-```
-
-#### 5. 从标准输入读取
-
-```bash
-cat test.c | ./toyc --mode asm
+# 编译单个文件到 LLVM IR（stdout）
+make 01_minimal.ll
 ```
 
 ---
 
-## 批量测试
+## 测试与验证
 
-### 特性说明
+ToyC 提供四层测试体系——从快速的内置单元测试到完整的 QEMU 端到端验证。
+WSL 相关测试需要在 WSL 环境中运行（因为 clang + qemu 安装于 WSL）。
 
-- **错误处理**: 编译失败的文件会被标记为 FAILED，但不会中断测试流程，其他文件会继续测试
-- **智能验证**: 只验证成功编译的文件，失败的文件会被跳过并在统计中显示
-- **详细输出**: 显示每个阶段的编译结果、错误信息和最终统计
-- **阶段报告**: 编译失败时会报告具体在哪个阶段失败（解析、IR生成、汇编生成等）
-- **无空文件**: 编译失败不会创建空的输出文件，保持文件系统整洁
+### 1. 内置单元测试（不需要 WSL）
 
-### 编译错误报告
-
-当编译失败时，编译器会报告失败的具体阶段：
+对所有 36 个测试用例执行完整编译流水线（词法 → 语法 → AST → IR → 寄存器分配 → RISC-V 汇编），验证各阶段无异常：
 
 ```bash
-$ ./toyc examples/spec/test_logic.c --mode asm
-Error: Compilation failed at stage: generating RISC-V assembly
-Details: stoi
-```
-
-支持的阶段包括：
-- `reading input` - 读取源文件
-- `parsing (lexical and syntax analysis)` - 词法和语法分析
-- `generating LLVM IR` - LLVM IR 代码生成
-- `generating RISC-V assembly` - RISC-V 汇编代码生成
-- `writing output` - 写入输出文件
-
-### 默认测试（测试 examples/compiler_inputs）
-
-```bash
+# 使用 Makefile
 make test
+
+# 或直接运行
+./build/toyc_test examples/compiler_inputs
 ```
 
-**输出结构**:
+输出示例：
 ```
-test/
-├── asm/                       # 汇编代码
-│   ├── 01_minimal_toyc.s      # ToyC 生成
-│   ├── 01_minimal_clang.s     # Clang 生成（对比）
-│   └── ...
-└── ir/                        # LLVM IR
-    ├── 01_minimal_toyc.ll
-    ├── 01_minimal_clang.ll
-    └── ...
+Testing: 01_minimal.c ... OK
+Testing: 02_assignment.c ... OK
+...
+Testing: 36_test_while.c ... OK
+
+=== Results: 36/36 passed ===
 ```
 
-**注意**: 如果某个文件编译失败，会显示 "FAILED (compilation error)"，但测试会继续进行。
+### 2. 批量生成汇编 / IR（需在 WSL 中运行）
 
-### 测试自定义目录
+批量对所有测试用例同时调用 ToyC 和 Clang，生成汇编或 IR 以供人工对比分析。
 
 ```bash
-# 测试指定目录下的所有 .c 文件
-make test TEST_SRC_DIR=path/to/your/test/folder
+# 在 WSL 中运行，或通过 PowerShell: wsl make generate-asm
 
-# 例如
-make test TEST_SRC_DIR=examples/single_func
-make test TEST_SRC_DIR=examples/multi_func
-make test TEST_SRC_DIR=examples/spec
+# 批量生成 RISC-V 汇编（ToyC + Clang）
+make generate-asm
+# 输出到 test/asm/：<base>_toyc.s 和 <base>_clang.s
+
+# 批量生成 LLVM IR（ToyC + Clang）
+make generate-ir
+# 输出到 test/ir/：<base>_toyc.ll 和 <base>_clang.ll
 ```
 
-### 仅生成汇编或 IR
-
+也可直接调用脚本：
 ```bash
-# 仅汇编
-bash scripts/generate_asm.sh [source_dir]
-
-# 仅 IR
-bash scripts/generate_ir.sh [source_dir]
-
-# 示例
-bash scripts/generate_asm.sh examples/single_func
+bash scripts/generate_asm.sh [源目录]
+bash scripts/generate_ir.sh [源目录]
 ```
 
-### 验证输出结果
+### 3. 端到端验证（需在 WSL 中运行，需 clang + qemu）
 
-验证功能会编译 ToyC 和 Clang 生成的汇编代码，并在 QEMU 中运行对比结果。
+对每个测试用例，分别将 ToyC 和 Clang 生成的汇编**链接为 RISC-V ELF** 并在 **QEMU** 中执行，对比两者的退出码和输出，确保 ToyC 生成的代码行为与 Clang 完全一致。
 
 ```bash
-# 验证默认目录（examples/compiler_inputs）
+# 一键验证全部（先 generate-asm，再 verify）
 make verify
 
-# 验证自定义目录
-make verify TEST_SRC_DIR=<your_directory>
-
-# 验证单个文件（推荐用于调试特定文件）
-make verify FILE=<filename.c>
-make verify TEST_SRC_DIR=examples/single_func FILE=test_call.c
-
-# 示例
-make verify TEST_SRC_DIR=examples/single_func
-make verify TEST_SRC_DIR=examples/multi_func
-make verify FILE=01_minimal.c                          # 从默认目录
-make verify FILE=examples/spec/test_fact.c             # 带路径的文件名
+# 也可手动分步执行
+make generate-asm
+bash scripts/verify_output.sh examples/compiler_inputs
 ```
 
-**验证输出示例**:
+验证流程：
 ```
-=========================================
-  Verification Summary
-=========================================
-Total files:  10
-Passed:       7 ✅
-Failed:       1 ❌
-Skipped:      2 ⚠
-
-✅ All runnable tests passed (some files skipped due to compilation errors)
+ToyC ASM → Clang 汇编器 → ELF → QEMU 执行 → 退出码 A
+Clang ASM → Clang 汇编器 → ELF → QEMU 执行 → 退出码 B
+比较 A == B → ✅ PASS / ❌ FAIL
 ```
 
-- **Passed**: 输出结果与 Clang 完全一致
-- **Failed**: 退出码或输出不匹配
-- **Skipped**: 编译失败，无法验证
+> **说明**: 链接使用自定义启动代码 `scripts/crt0.s`（调用 `main` 后执行 `ecall` 退出），无需标准 C 库。
 
-### 调试模式验证
+### 4. 单文件调试模式（需在 WSL 中运行）
 
-调试模式**逐步显示**编译的所有中间产物（AST、LLVM IR、汇编代码），并在最后进行验证：
+对单个文件输出所有中间产物（AST → IR → ASM），同时生成 Clang 参考输出，并自动进行端到端验证：
 
 ```bash
-# 必须指定文件名
-make verify-debug FILE=<filename.c>
+make debug FILE=01_minimal.c
 
-# 指定不同目录的文件
-make verify-debug TEST_SRC_DIR=examples/single_func FILE=test_call.c
-
-# 示例
-make verify-debug FILE=01_minimal.c
-make verify-debug FILE=09_recursion.c
-make verify-debug FILE=examples/spec/test_fact.c       # 带路径的文件名
+# 或直接调用脚本
+bash scripts/verify_debug.sh examples/compiler_inputs 01_minimal.c
 ```
 
-**调试模式输出流程**:
-1. **Step 1**: 生成并显示 AST（抽象语法树）
-2. **Step 2**: 生成并显示 LLVM IR
-3. **Step 3**: 从 IR 生成并显示 RISC-V 汇编
-4. **Step 4**: 准备验证文件（复制到 test/ 目录）
-5. **Step 5**: 运行验证，与 Clang 输出对比
+调试模式流程（6 步）：
+1. 生成 AST 并打印
+2. 生成 LLVM IR 并保存
+3. 生成 RISC-V 汇编
+4. 生成 Clang 参考 IR 和汇编
+5. 复制产物到 `test/asm/` 和 `test/ir/` 目录
+6. 调用 `verify_output.sh` 执行端到端验证
 
-调试模式会在 `test/debug/` 目录下生成：
-- `<filename>_ast.txt` - 抽象语法树
-- `<filename>_ir.ll` - LLVM IR
-- `<filename>_asm.s` - RISC-V 汇编代码
+### 5. 从 Windows PowerShell 调用 WSL 测试
 
-**使用场景**:
-- 学习编译器各阶段的输出格式
-- 调试特定文件的编译问题
-- 查看编译过程的详细信息
+若在 Windows 环境开发，可通过 `wsl` 命令调用测试脚本：
 
-### 清理输出
+```powershell
+# 在 PowerShell 中执行 WSL 测试
+wsl bash scripts/generate_asm.sh examples/compiler_inputs
+wsl bash scripts/verify_output.sh examples/compiler_inputs
+wsl bash scripts/verify_debug.sh examples/compiler_inputs 01_minimal.c
+
+# 或直接在 WSL 中运行 make
+wsl make verify
+wsl make debug FILE=01_minimal.c
+```
+
+> **注意**: WSL 可以直接调用 Windows `.exe` 文件（如 `./build/toyc.exe`），所有脚本已适配此特性。
+
+### 清理
 
 ```bash
-# 清理构建产物
-make clean
-
-# 清理测试输出
-rm -rf test/asm test/ir test/debug
-```
-
-### 输出位置
-
-无论测试哪个目录，输出都统一在 `test/` 目录下：
-
-```
-test/
-├── asm/          # 汇编输出
-│   ├── <file1>_toyc.s
-│   ├── <file1>_clang.s
-│   └── ...
-├── ir/           # IR 输出
-│   ├── <file1>_toyc.ll
-│   ├── <file1>_clang.ll
-│   └── ...
-├── debug/        # 调试模式输出（仅 make verify-debug）
-│   ├── <file>_ast.txt
-│   ├── <file>_ir.ll
-│   └── <file>_asm.s
-└── verify_temp/  # 验证时的临时文件（可忽略）
+make clean      # 清理 build/ 和 test/ 目录
+make rebuild    # 清理后重新编译
 ```
 
 ---
 
 ## 测试用例说明
 
-项目包含多个测试集，覆盖不同的语言特性和使用场景。
+项目包含 **36 个测试用例**，覆盖从基础语法到复杂控制流的各种场景：
 
-### 主测试集（examples/compiler_inputs/）
+### 基础语法（01–15）
 
-基础功能测试，包含 24 个测试用例：
+| 文件                         | 测试功能             | 预期退出码 |
+| ---------------------------- | -------------------- | ---------- |
+| `01_minimal.c`               | 最小程序（空 main）  | 0          |
+| `02_assignment.c`            | 变量赋值运算         | 3          |
+| `03_if_else.c`               | if-else 条件分支     | 4          |
+| `04_while_break.c`           | while 循环 + break   | 5          |
+| `05_function_call.c`         | 基本函数定义与调用   | 7          |
+| `06_continue.c`              | continue 跳过迭代    | 8          |
+| `07_scope_shadow.c`          | 块作用域变量遮蔽     | 1          |
+| `08_short_circuit.c`         | 逻辑短路求值 `&&` `\|\|` | 211    |
+| `09_recursion.c`             | 递归函数（阶乘）     | 120        |
+| `10_void_fn.c`               | void 函数定义与调用  | 0          |
+| `11_precedence.c`            | 运算符优先级         | 14         |
+| `12_division_check.c`        | 整数除法             | 2          |
+| `13_scope_block.c`           | 块内局部变量作用域   | 8          |
+| `14_nested_if_while.c`       | 嵌套 if + while      | 6          |
+| `15_multiple_return_paths.c` | 多路径 return        | 62         |
+
+### 进阶功能（16–20）
 
 | 文件                         | 测试功能             |
 | ---------------------------- | -------------------- |
-| `01_minimal.c`               | 最小程序（空 main）  |
-| `02_assignment.c`            | 变量赋值             |
-| `03_if_else.c`               | if-else 条件语句     |
-| `04_while_break.c`           | while 循环和 break   |
-| `05_function_call.c`         | 函数调用             |
-| `06_continue.c`              | continue 语句        |
-| `07_scope_shadow.c`          | 作用域和变量遮蔽     |
-| `08_short_circuit.c`         | 逻辑短路求值         |
-| `09_recursion.c`             | 递归函数（斐波那契） |
-| `10_void_fn.c`               | void 函数            |
-| `11_precedence.c`            | 运算符优先级         |
-| `12_division_check.c`        | 除法和取模运算       |
-| `13_scope_block.c`           | 块作用域             |
-| `14_nested_if_while.c`       | 嵌套控制流           |
-| `15_multiple_return_paths.c` | 多返回路径           |
-| `16_test_multiple_funcs.c`   | 多函数               |
-| `17_test_nested_loops.c`     | 嵌套循环             |
-| `18_test_break_continue.c`   | break 和 continue    |
-| `19_test_call.c`             | 函数调用             |
-| `20_test_if.c`               | if 语句              |
-| `21_test_mod_ops.c`          | 取模运算             |
-| `22_test_nested_block.c`     | 嵌套块作用域         |
-| `23_test_void.c`             | void 函数            |
-| `24_test_while.c`            | while 循环           |
+| `16_complex_syntax.c`        | 复杂语法含注释解析   |
+| `17_complex_expressions.c`   | 阶乘 + 斐波那契 + 嵌套调用 |
+| `18_many_variables.c`        | 大量局部变量（寄存器溢出） |
+| `19_many_arguments.c`        | 8/16 参数函数（栈传递） |
+| `20_comprehensive.c`         | 综合测试：递归 + 循环 + 多函数 |
 
-### 使用示例
+### 回归测试（21–36）
 
-```bash
-# 测试主测试集
-make verify
-
-# 测试单函数集
-make verify TEST_SRC_DIR=examples/single_func
-
-# 测试规范集
-make verify TEST_SRC_DIR=examples/spec
-
-# 调试特定文件
-make verify-debug FILE=examples/spec/test_fact.c
-```
+| 文件                           | 测试功能                   |
+| ------------------------------ | -------------------------- |
+| `21_test_break_continue.c`     | break + continue 组合      |
+| `22_test_call.c`               | 函数调用返回值             |
+| `23_test_complex.c`            | 复合表达式 + 块作用域      |
+| `24_test_fact.c`               | 递归阶乘                   |
+| `25_test_fib.c`                | 递归斐波那契               |
+| `26_test_if.c`                 | if-else 分支               |
+| `27_test_logic.c`              | 逻辑表达式 `&& \|\| !`    |
+| `28_test_logical_multiple.c`   | 多条件逻辑组合             |
+| `29_test_mix_expr.c`           | 混合表达式 + 一元运算      |
+| `30_test_modulo.c`             | 取模运算                   |
+| `31_test_multiple_funcs.c`     | 多函数定义与调用           |
+| `32_test_nested_block.c`       | 嵌套块作用域               |
+| `33_test_nested_loops.c`       | 嵌套 while 循环            |
+| `34_test_unary.c`              | 一元运算符 `-` 和 `!`     |
+| `35_test_void.c`               | void 函数                  |
+| `36_test_while.c`              | while + break 循环控制     |
 
 ---
 
-## 实用技巧
+## 输出示例
 
-### 快速检查单个文件
+以 `01_minimal.c` 为例：
 
-```bash
-# 只编译不验证
-./toyc examples/compiler_inputs/01_minimal.c --mode asm
-
-# 编译并验证
-make verify FILE=01_minimal.c
-
-# 查看详细的编译过程
-make verify-debug FILE=01_minimal.c
+```c
+// 01_minimal.c
+int main() {
+    return 0;
+}
 ```
 
-### 对比不同目录的测试结果
+### AST 输出 (`--ast`)
 
-```bash
-# 测试并记录结果
-make verify TEST_SRC_DIR=examples/compiler_inputs 2>&1 | tee result_inputs.txt
-make verify TEST_SRC_DIR=examples/single_func 2>&1 | tee result_single.txt
-make verify TEST_SRC_DIR=examples/spec 2>&1 | tee result_spec.txt
+```
+=== AST ===
+FuncDef: int main()
+  Block:
+    Return:
+      Number: 0
 ```
 
-### 查找编译失败的文件
+### LLVM IR 输出 (`--ir`)
 
-```bash
-# 批量测试后查看哪些文件编译失败
-make verify TEST_SRC_DIR=examples/single_func 2>&1 | grep "SKIPPED"
+```
+=== LLVM IR ===
+define i32 @main() {
+entry:
+  ret i32 0
+}
 ```
 
-### 性能测试
+### RISC-V 汇编输出 (`--asm`)
 
-```bash
-# 测量编译时间
-time ./toyc examples/compiler_inputs/09_recursion.c --mode asm > /dev/null
-
-# 批量测试性能
-time make test TEST_SRC_DIR=examples/compiler_inputs
 ```
-
----
-
-## 常见问题
-
-### Q: 编译失败但没有详细错误信息？
-
-A: 使用 `make verify-debug` 查看详细的编译过程和失败阶段：
-```bash
-make verify-debug FILE=<your_file.c>
-```
-
-### Q: 如何添加自己的测试用例？
-
-A: 将 `.c` 文件放入任意目录，然后使用 `TEST_SRC_DIR` 参数测试：
-```bash
-mkdir my_tests
-# 将你的 .c 文件放入 my_tests/
-make verify TEST_SRC_DIR=my_tests
-```
-
-### Q: 验证失败是什么原因？
-
-A: 验证失败通常有以下原因：
-- **退出码不匹配**: ToyC 生成的程序退出码与 Clang 不同
-- **输出不一致**: 程序的标准输出与预期不符
-- **汇编编译失败**: 生成的汇编代码有语法错误
-
-使用 `make verify-debug` 查看详细信息，检查 `test/asm/` 下的汇编文件。
-
-### Q: 如何清理所有测试文件？
-
-A: 
-```bash
-make clean                    # 清理编译产物
-rm -rf test/                  # 清理所有测试输出
+=== RISC-V Assembly ===
+  .text
+  .globl main
+main:
+  addi sp, sp, -16
+  sw ra, 12(sp)
+  sw s0, 8(sp)
+  addi s0, sp, 16
+  li a0, 0
+  lw ra, 12(sp)
+  lw s0, 8(sp)
+  addi sp, sp, 16
+  ret
 ```
 
 ---
@@ -558,32 +496,73 @@ rm -rf test/                  # 清理所有测试输出
 
 ```
 C-SubsetCompilerUsingLLVM/
-├── Makefile                  # 构建配置
-├── README.md                 # 本文档
-├── toyc                      # 编译器可执行文件（编译后生成）
-├── src/                      # 源代码
-│   ├── main.cpp              # 主程序入口
-│   ├── lexer.cpp             # 词法分析器
-│   ├── parser.cpp            # 语法分析器
-│   ├── ast.cpp               # AST 节点实现
-│   ├── llvm_ir.cpp           # LLVM IR 生成
-│   ├── riscv_gen.cpp         # RISC-V 汇编生成
-│   ├── ra_linear_scan.cpp    # 寄存器分配
-│   └── include/              # 头文件
-├── scripts/                  # 测试脚本
-│   ├── generate_asm.sh       # 批量生成汇编
-│   ├── generate_ir.sh        # 批量生成 IR
-│   ├── verify_output.sh      # 验证输出
-│   ├── verify_debug.sh       # 调试模式验证
-│   └── crt0.s                # 启动代码
-├── examples/                 # 测试用例
-│   ├── compiler_inputs/      # 主测试集
-│   ├── single_func/          # 单函数测试
-│   └── spec/                 # 规范测试
-├── test/                     # 测试输出（自动生成）
-│   ├── asm/                  # 汇编文件
-│   ├── ir/                   # LLVM IR 文件
-│   └── debug/                # 调试输出
-├── docs/                     # 技术文档
-└── build/                    # 编译中间文件
+├── CMakeLists.txt                  # CMake 构建配置（Ninja / MinGW Makefiles）
+├── Makefile                        # 包装器：build / test / verify / debug / clean
+├── README.md                       # 本文档
+│
+├── src/                            # 源代码
+│   ├── include/                    # 头文件（工作目录，开发时直接修改此处）
+│   │   ├── token.h                 #   Token 类型枚举
+│   │   ├── lexer.h                 #   词法分析器
+│   │   ├── ast.h                   #   AST 节点定义
+│   │   ├── parser.h                #   语法分析器
+│   │   ├── ir.h                    #   结构化 IR 模型（Opcode/Operand/Instruction/BB/Function/Module）
+│   │   ├── ir_builder.h            #   IRBuilder（AST → ir::Module）
+│   │   ├── ir_parser.h             #   IRParser（LLVM IR 文本 → ir::Module）
+│   │   ├── reg_alloc.h             #   线性扫描寄存器分配器
+│   │   └── riscv_codegen.h         #   RISC-V 代码生成器
+│   ├── main.cpp                    # 主程序入口（CLI 处理）
+│   ├── lexer.cpp                   # 词法分析实现
+│   ├── ast.cpp                     # AST 打印实现
+│   ├── parser.cpp                  # 语法分析实现
+│   ├── ir.cpp                      # IR 模型实现（工厂方法、查询接口、序列化）
+│   ├── ir_builder.cpp              # IRBuilder 实现（AST → IR 转换）
+│   ├── ir_parser.cpp               # IRParser 实现（.ll 文本 → IR 结构）
+│   ├── reg_alloc.cpp               # 寄存器分配器实现
+│   ├── riscv_codegen.cpp           # RISC-V 代码生成实现
+│   └── unified_test.cpp            # 统一测试程序
+│
+├── include/toyc/                   # 公共头文件（同步自 src/include/）
+│
+├── scripts/                        # 构建和测试脚本（在 WSL 中运行）
+│   ├── crt0.s                      #   RISC-V 启动代码（_start → main → ecall 退出）
+│   ├── generate_asm.sh             #   批量生成 ToyC + Clang 汇编
+│   ├── generate_ir.sh              #   批量生成 ToyC + Clang LLVM IR
+│   ├── verify_output.sh            #   端到端验证（Clang 链接 → QEMU 执行 → 退出码对比）
+│   ├── verify_debug.sh             #   单文件调试模式（输出全部中间产物 + 验证）
+│   └── test_instr.sh               #   指令测试命令参考
+│
+├── examples/                       # 测试用例
+│   └── compiler_inputs/            #   36 个 .c 测试文件
+│       ├── 01_minimal.c            #   最小程序
+│       ├── ...                     #   ...
+│       └── 36_test_while.c         #   while 循环
+│
+├── docs/                           # 技术文档（6 篇）
+│   ├── 编译流程详解.md
+│   ├── 从调用链理解的寄存器分配流程.md
+│   ├── 从调用链理解的目标代码生成.md
+│   ├── 汇编到验证完整流程.md
+│   ├── 寄存器分配与代码生成详解.md
+│   └── 线性扫描算法核心思路.md
+│
+├── assets/                         # 文档图片资源
+└── build/                          # 构建产物（自动生成）
+    ├── toyc.exe                    #   编译器主程序
+    └── toyc_test.exe               #   统一测试程序
 ```
+
+---
+
+## 技术文档
+
+详细的技术说明位于 `docs/` 目录：
+
+| 文档 | 说明 |
+|------|------|
+| [编译流程详解](docs/编译流程详解.md) | 整体编译流水线：词法分析 → 语法分析 → IR 生成 → 寄存器分配 → 代码生成 |
+| [从调用链理解的寄存器分配流程](docs/从调用链理解的寄存器分配流程.md) | 活跃性分析 + 线性扫描寄存器分配的完整调用链追踪 |
+| [从调用链理解的目标代码生成](docs/从调用链理解的目标代码生成.md) | RISC-V 汇编生成的完整调用链追踪 |
+| [汇编到验证完整流程](docs/汇编到验证完整流程.md) | 从汇编输出到 QEMU 验证的端到端流程 |
+| [寄存器分配与代码生成详解](docs/寄存器分配与代码生成详解.md) | 寄存器分配与代码生成的算法细节 |
+| [线性扫描算法核心思路](docs/线性扫描算法核心思路.md) | 线性扫描寄存器分配核心算法解释 |

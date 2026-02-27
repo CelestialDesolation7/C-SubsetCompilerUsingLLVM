@@ -1,67 +1,69 @@
 #!/usr/bin/env bash
+# generate_asm.sh — 批量生成 ToyC 与 Clang 的 RISC-V 汇编，用于对比
+#
+# 用法:  bash scripts/generate_asm.sh [源目录]
+# 默认:  examples/compiler_inputs
 
-# Use pipefail if available, but don't fail if it's not supported
 set -eu
-if [[ -n "${BASH_VERSION:-}" ]]; then
-    set -o pipefail
-fi
+[[ -n "${BASH_VERSION:-}" ]] && set -o pipefail
 
-# 支持通过参数指定源目录，默认为 examples/compiler_inputs
 SRC_DIR="${1:-examples/compiler_inputs}"
 OUT_DIR="test/asm"
 
-# 检查源目录是否存在
+# ---------- 查找 ToyC 可执行文件 ----------
+TOYC=""
+for candidate in ./build/toyc ./build/toyc.exe ./toyc ./toyc.exe; do
+  [[ -f "$candidate" ]] && { TOYC="$candidate"; break; }
+done
+if [[ -z "$TOYC" ]]; then
+  echo "Error: ToyC compiler not found (searched ./build/ and ./)"
+  echo "Please run 'cmake --build build' first."
+  exit 1
+fi
+echo "Using ToyC: $TOYC"
+
+# ---------- 检查源目录 ----------
 if [[ ! -d "$SRC_DIR" ]]; then
   echo "Error: Source directory '$SRC_DIR' does not exist"
   exit 1
 fi
 
-# 创建输出目录（如果已存在则忽略）
 mkdir -p "$OUT_DIR"
 
-# 处理每个 .c 文件
+TOTAL=0; OK=0; FAIL=0
+
 for c in "$SRC_DIR"/*.c; do
-  # Skip if no .c files found
-  if [[ ! -f "$c" ]]; then
-    echo "No .c files found in $SRC_DIR"
-    exit 0
-  fi
-  
+  [[ ! -f "$c" ]] && { echo "No .c files found in $SRC_DIR"; exit 0; }
+
   base="$(basename "$c" .c)"
-  c_file="$SRC_DIR/$base.c"
+  TOTAL=$((TOTAL + 1))
+  echo ">>> $base"
 
-  echo ">>> 处理 $base …"
-
-  # 1. ToyC 生成 asm
-  if [[ -f "./toyc" ]]; then
-    if ./toyc "$c" --mode asm --output "$OUT_DIR/${base}_toyc.s" 2>/dev/null; then
-      echo "  ToyC → asm/${base}_toyc.s"
-    else
-      echo "  ToyC → FAILED (compilation error)"
-    fi
-  elif [[ -f "./toyc.exe" ]]; then
-    if ./toyc.exe "$c" --mode asm --output "$OUT_DIR/${base}_toyc.s" 2>/dev/null; then
-      echo "  ToyC → asm/${base}_toyc.s"
-    else
-      echo "  ToyC → FAILED (compilation error)"
-    fi
+  # 1. ToyC → asm（使用 -o 将汇编写入文件）
+  if "$TOYC" "$c" -o "$OUT_DIR/${base}_toyc.s" 2>/dev/null; then
+    echo "  ToyC  → $OUT_DIR/${base}_toyc.s"
   else
-    echo "  ToyC → skipped (toyc not found)"
+    echo "  ToyC  → FAILED"
+    FAIL=$((FAIL + 1))
+    continue
   fi
 
-  # 2. Clang 生成 asm（需要对应的 .c 文件存在）
-  if [[ -f "$c_file" ]] && command -v clang >/dev/null 2>&1; then
-    clang -S \
-      --target=riscv32-unknown-elf \
-      -march=rv32i -mabi=ilp32 \
-      "$c_file" \
-      -o "$OUT_DIR/${base}_clang.s"
-    echo "  Clang → asm/${base}_clang.s"
+  # 2. Clang → asm（需安装 clang + RISC-V 后端）
+  if command -v clang >/dev/null 2>&1; then
+    if clang -S --target=riscv32-unknown-elf -march=rv32im -mabi=ilp32 \
+         -O0 "$c" -o "$OUT_DIR/${base}_clang.s" 2>/dev/null; then
+      echo "  Clang → $OUT_DIR/${base}_clang.s"
+    else
+      echo "  Clang → FAILED"
+    fi
   else
-    echo "  跳过 Clang（未找到 $base.c 或 clang 未安装）"
+    echo "  Clang → skipped (not installed)"
   fi
 
+  OK=$((OK + 1))
   echo
 done
 
-echo "所有汇编已生成到 $OUT_DIR"
+echo "========================================="
+echo "Done: $OK/$TOTAL succeeded, $FAIL failed"
+echo "Output directory: $OUT_DIR/"

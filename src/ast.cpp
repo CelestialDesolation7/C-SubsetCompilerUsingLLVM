@@ -1,22 +1,20 @@
-#include "include/ast.h"
+#include <ast.h>
 
-// 缩进打印辅助函数：根据 level 层级打印相应数量的缩进空格（每层两个空格），在打印 AST 节点时用于控制层次结构显示
-static void printIndent(int level, std::ostream &os)
-{
+// 缩进打印辅助函数：根据 level 层级打印相应数量的缩进空格（每层两个空格），
+// 在打印 AST 节点时用于控制层次结构显示
+static void printIndent(int level, std::ostream &os) {
     for (int i = 0; i < level; ++i)
         os << "  ";
 }
 
 // NumberExpr 打印实现：输出 Number(value)，value 为数字字面量
-void NumberExpr::print(int level, std::ostream &os) const
-{
+void NumberExpr::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Number(" << value << ")\n";
 }
 
 // IdentifierExpr 打印实现：输出 Identifier(name)，name 为标识符名称
-void IdentifierExpr::print(int level, std::ostream &os) const
-{
+void IdentifierExpr::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Identifier(" << name << ")\n";
 }
@@ -24,8 +22,7 @@ void IdentifierExpr::print(int level, std::ostream &os) const
 // BinaryExpr 打印实现：
 // 1. 输出 Binary(op)，op 为运算符
 // 2. 递归打印 lhs 和 rhs，缩进层级加 1
-void BinaryExpr::print(int level, std::ostream &os) const
-{
+void BinaryExpr::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Binary(" << op << ")\n";
     lhs->print(level + 1, os);
@@ -33,16 +30,14 @@ void BinaryExpr::print(int level, std::ostream &os) const
 }
 
 // UnaryExpr 打印实现：输出 Unary(op)，然后打印子表达式，缩进层级加 1
-void UnaryExpr::print(int level, std::ostream &os) const
-{
+void UnaryExpr::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Unary(" << op << ")\n";
     expr->print(level + 1, os);
 }
 
 // CallExpr 打印实现：输出 Call(callee)，callee 为调用函数名称，然后依次打印每个参数表达式
-void CallExpr::print(int level, std::ostream &os) const
-{
+void CallExpr::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Call(" << callee << ")\n";
     for (auto &arg : args)
@@ -50,16 +45,14 @@ void CallExpr::print(int level, std::ostream &os) const
 }
 
 // AssignStmt 打印实现：输出 Assign(name)，name 为被赋值变量名，然后打印赋值表达式
-void AssignStmt::print(int level, std::ostream &os) const
-{
+void AssignStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Assign(" << name << ")\n";
     expr->print(level + 1, os);
 }
 
 // DeclStmt 打印实现：输出 Decl(name)，name 为声明变量名，然后打印初始化表达式
-void DeclStmt::print(int level, std::ostream &os) const
-{
+void DeclStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Decl(" << name << ")\n";
     expr->print(level + 1, os);
@@ -68,14 +61,12 @@ void DeclStmt::print(int level, std::ostream &os) const
 // IfStmt 打印实现：
 // 1. 输出 If，再打印条件和 then 分支
 // 2. 如果存在 else 分支，则输出 Else 并打印 elseStmt
-void IfStmt::print(int level, std::ostream &os) const
-{
+void IfStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "If\n";
     cond->print(level + 1, os);
     thenStmt->print(level + 1, os);
-    if (elseStmt)
-    {
+    if (elseStmt) {
         printIndent(level, os);
         os << "Else\n";
         elseStmt->print(level + 1, os);
@@ -83,8 +74,7 @@ void IfStmt::print(int level, std::ostream &os) const
 }
 
 // WhileStmt 打印实现：输出 While，再打印循环条件和循环体
-void WhileStmt::print(int level, std::ostream &os) const
-{
+void WhileStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "While\n";
     cond->print(level + 1, os);
@@ -92,22 +82,19 @@ void WhileStmt::print(int level, std::ostream &os) const
 }
 
 // BreakStmt 打印实现：输出 Break
-void BreakStmt::print(int level, std::ostream &os) const
-{
+void BreakStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Break\n";
 }
 
 // ContinueStmt 打印实现：输出 Continue
-void ContinueStmt::print(int level, std::ostream &os) const
-{
+void ContinueStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Continue\n";
 }
 
 // ReturnStmt 打印实现：输出 Return，如有返回表达式则打印该表达式
-void ReturnStmt::print(int level, std::ostream &os) const
-{
+void ReturnStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Return\n";
     if (expr)
@@ -115,23 +102,20 @@ void ReturnStmt::print(int level, std::ostream &os) const
 }
 
 // BlockStmt 打印实现：输出 Block，然后打印块中所有语句，缩进层级加 1
-void BlockStmt::print(int level, std::ostream &os) const
-{
+void BlockStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Block\n";
-    for (auto &stmt : stmts)
-        stmt->print(level + 1, os);
+    for (auto &s : stmts)
+        s->print(level + 1, os);
 }
 
 // FuncDef 打印实现：
 // 1. 输出 Function retType name(params)
 // 2. 打印函数体 BlockStmt
-void FuncDef::print(int level, std::ostream &os) const
-{
+void FuncDef::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Function " << retType << " " << name << "(";
-    for (size_t i = 0; i < params.size(); ++i)
-    {
+    for (size_t i = 0; i < params.size(); ++i) {
         os << i;
         if (i + 1 < params.size())
             os << ", ";
