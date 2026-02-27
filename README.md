@@ -28,7 +28,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → IRBuilder → ir::Modu
 ### 技术栈
 
 - **语言**: C++20
-- **构建系统**: CMake (≥ 3.16) + Ninja / MinGW Makefiles
+- **构建系统**: CMake (≥ 3.16) + Ninja / MinGW Makefiles / Unix Makefiles
 - **目标架构**: RISC-V 32-bit (RV32I)
 - **中间表示**: 结构化 LLVM IR (SSA 形式)，具有完整的 Opcode 枚举和类型化指令模型
 - **寄存器分配**: 线性扫描算法
@@ -205,17 +205,25 @@ sudo apt install gcc-riscv64-unknown-elf
 ### 编译项目
 
 ```bash
-# 方式一：使用 Makefile（推荐）
+# 方式一：使用 Makefile（推荐，自动检测平台）
 make
 
-# 方式二：手动 CMake
+# 方式二：手动 CMake（Windows）
 cmake -S . -B build -G Ninja
 cmake --build build --parallel
+
+# 方式三：手动 CMake（WSL / Linux）
+cmake -S . -B build-linux
+cmake --build build-linux --parallel
 ```
 
+Makefile 会自动检测运行环境：
+- **Windows (MinGW)**：构建到 `build/`，尝试 Ninja → MinGW Makefiles
+- **Linux / WSL**：构建到 `build-linux/`，使用 Unix Makefiles
+
 编译完成后，可执行文件位于：
-- `build/toyc.exe` — 编译器主程序
-- `build/toyc_test.exe` — 统一测试程序
+- Windows: `build/toyc.exe`、`build/toyc_test.exe`
+- Linux/WSL: `build-linux/toyc`、`build-linux/toyc_test`
 
 ---
 
@@ -278,11 +286,14 @@ WSL 相关测试需要在 WSL 环境中运行（因为 clang + qemu 安装于 WS
 对所有 36 个测试用例执行完整编译流水线（词法 → 语法 → AST → IR → 寄存器分配 → RISC-V 汇编），验证各阶段无异常：
 
 ```bash
-# 使用 Makefile
+# 使用 Makefile（自动选择正确的构建目录）
 make test
 
-# 或直接运行
+# 或直接运行（Windows）
 ./build/toyc_test examples/compiler_inputs
+
+# 或直接运行（WSL / Linux）
+./build-linux/toyc_test examples/compiler_inputs
 ```
 
 输出示例：
@@ -298,6 +309,9 @@ Testing: 36_test_while.c ... OK
 ### 2. 批量生成汇编 / IR（需在 WSL 中运行）
 
 批量对所有测试用例同时调用 ToyC 和 Clang，生成汇编或 IR 以供人工对比分析。
+
+> **注意**: 这些目标不会重新编译项目，只检查 `toyc` 是否已存在。请先在对应环境执行 `make` 编译。
+> 脚本会自动搜索 `build-linux/toyc`、`build/toyc`、`build/toyc.exe`。
 
 ```bash
 # 在 WSL 中运行，或通过 PowerShell: wsl make generate-asm
@@ -373,12 +387,15 @@ wsl make verify
 wsl make debug FILE=01_minimal.c
 ```
 
-> **注意**: WSL 可以直接调用 Windows `.exe` 文件（如 `./build/toyc.exe`），所有脚本已适配此特性。
+> **注意**: WSL 下的 `generate-asm`、`generate-ir`、`verify`、`debug` 等目标**不会触发重新编译**，
+> 而是直接使用已有的 `toyc` 可执行文件（自动搜索 `build-linux/toyc`、`build/toyc.exe` 等）。
+> 这避免了 Windows CMakeCache 与 WSL 路径冲突的问题。
+> 若需要 Linux 原生二进制，可在 WSL 中执行 `make`，产物在 `build-linux/`。
 
 ### 清理
 
 ```bash
-make clean      # 清理 build/ 和 test/ 目录
+make clean      # 清理 build/、build-linux/ 和 test/ 目录
 make rebuild    # 清理后重新编译
 ```
 
@@ -496,8 +513,8 @@ main:
 
 ```
 C-SubsetCompilerUsingLLVM/
-├── CMakeLists.txt                  # CMake 构建配置（Ninja / MinGW Makefiles）
-├── Makefile                        # 包装器：build / test / verify / debug / clean
+├── CMakeLists.txt                  # CMake 构建配置（Ninja / MinGW Makefiles / Unix Makefiles）
+├── Makefile                        # 包装器：自动检测平台，build / test / verify / debug / clean
 ├── README.md                       # 本文档
 │
 ├── src/                            # 源代码
@@ -547,9 +564,12 @@ C-SubsetCompilerUsingLLVM/
 │   └── 线性扫描算法核心思路.md
 │
 ├── assets/                         # 文档图片资源
-└── build/                          # 构建产物（自动生成）
-    ├── toyc.exe                    #   编译器主程序
-    └── toyc_test.exe               #   统一测试程序
+├── build/                          # Windows 构建产物（自动生成）
+│   ├── toyc.exe                    #   编译器主程序
+│   └── toyc_test.exe               #   统一测试程序
+└── build-linux/                    # Linux/WSL 构建产物（自动生成）
+    ├── toyc                        #   编译器主程序 (ELF)
+    └── toyc_test                   #   统一测试程序 (ELF)
 ```
 
 ---

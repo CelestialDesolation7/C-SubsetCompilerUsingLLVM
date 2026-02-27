@@ -31,7 +31,7 @@ fi
 
 # ========== 查找 ToyC 可执行文件 ==========
 TOYC=""
-for candidate in ./build/toyc ./build/toyc.exe ./toyc ./toyc.exe; do
+for candidate in ./build-linux/toyc ./build/toyc ./build/toyc.exe ./toyc ./toyc.exe; do
   [[ -f "$candidate" ]] && { TOYC="$candidate"; break; }
 done
 if [[ -z "$TOYC" ]]; then

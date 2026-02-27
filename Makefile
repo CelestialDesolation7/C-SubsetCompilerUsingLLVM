@@ -15,30 +15,54 @@
 #     sudo apt install clang qemu-user
 # ─────────────────────────────────────────────────────────────────
 
-BUILD_DIR := build
-SRC_DIR   := examples/compiler_inputs
+SRC_DIR := examples/compiler_inputs
 
-.PHONY: all build test generate-asm generate-ir verify debug clean rebuild help
+# ── OS 检测：Linux/WSL → build-linux/   Windows/MinGW → build/ ──
+UNAME_S := $(shell uname -s 2>/dev/null || echo Windows)
+ifneq ($(findstring Linux,$(UNAME_S)),)
+  BUILD_DIR := build-linux
+else
+  BUILD_DIR := build
+endif
+
+.PHONY: all build test generate-asm generate-ir verify debug clean rebuild help check-toyc
 
 all: build
 
-# ---------- 编译 ----------
+# ---------- 编译（自动适配平台） ----------
 build:
+ifneq ($(findstring Linux,$(UNAME_S)),)
+	@cmake -S . -B $(BUILD_DIR)
+else
 	@cmake -S . -B $(BUILD_DIR) -G Ninja 2>/dev/null \
 	 || cmake -S . -B $(BUILD_DIR) -G "MinGW Makefiles" 2>/dev/null \
 	 || cmake -S . -B $(BUILD_DIR)
+endif
 	@cmake --build $(BUILD_DIR) --parallel
 
-# ---------- 内置测试（不需要 WSL） ----------
+# ---------- 检查 ToyC 是否已编译（不重新编译） ----------
+check-toyc:
+	@FOUND=""; \
+	for f in build-linux/toyc build/toyc build/toyc.exe ./toyc ./toyc.exe; do \
+	    [ -f "$$f" ] && { FOUND="$$f"; break; }; \
+	done; \
+	if [ -z "$$FOUND" ]; then \
+	    echo "Error: ToyC not found (searched build/, build-linux/)"; \
+	    echo "Please build first: make"; \
+	    exit 1; \
+	fi; \
+	echo "Found ToyC: $$FOUND"
+
+# ---------- 内置测试 ----------
 test: build
 	@./$(BUILD_DIR)/toyc_test $(SRC_DIR)
 
-# ---------- 批量汇编生成（在 WSL 中运行） ----------
-generate-asm: build
+# ---------- 批量汇编生成（WSL 中运行，不重新编译） ----------
+generate-asm: check-toyc
 	@bash scripts/generate_asm.sh $(SRC_DIR)
 
-# ---------- 批量 IR 生成（在 WSL 中运行） ----------
-generate-ir: build
+# ---------- 批量 IR 生成（WSL 中运行，不重新编译） ----------
+generate-ir: check-toyc
 	@bash scripts/generate_ir.sh $(SRC_DIR)
 
 # ---------- 端到端验证（在 WSL 中运行，需 clang + qemu） ----------
@@ -47,7 +71,7 @@ verify: generate-asm
 
 # ---------- 单文件调试（在 WSL 中运行） ----------
 # 用法: make debug FILE=01_minimal.c
-debug: build
+debug: check-toyc
 	@if [ -z "$(FILE)" ]; then \
 	    echo "Usage: make debug FILE=<filename.c>"; \
 	    echo "Example: make debug FILE=01_minimal.c"; \
@@ -57,7 +81,7 @@ debug: build
 
 # ---------- 清理 ----------
 clean:
-	@rm -rf $(BUILD_DIR) test/
+	@rm -rf build build-linux test/
 
 rebuild: clean build
 
@@ -72,12 +96,12 @@ rebuild: clean build
 help:
 	@echo "ToyC Compiler - Makefile Targets"
 	@echo "================================"
-	@echo "  make              Build the project"
+	@echo "  make              Build (auto-detects Windows/Linux/WSL)"
 	@echo "  make test         Run 36 built-in unit tests"
-	@echo "  make generate-asm Generate ToyC + Clang assembly for all test cases"
-	@echo "  make generate-ir  Generate ToyC + Clang LLVM IR for all test cases"
-	@echo "  make verify       Full end-to-end verification (asm → link → QEMU → diff)"
-	@echo "  make debug FILE=xx.c  Single-file debug (AST / IR / ASM + verify)"
-	@echo "  make clean        Remove build/ and test/ directories"
+	@echo "  make generate-asm Generate ToyC + Clang assembly (WSL)"
+	@echo "  make generate-ir  Generate ToyC + Clang LLVM IR (WSL)"
+	@echo "  make verify       Full end-to-end verification (WSL)"
+	@echo "  make debug FILE=xx.c  Single-file debug (WSL)"
+	@echo "  make clean        Remove build/, build-linux/ and test/"
 	@echo "  make rebuild      Clean then build"
 	@echo "  make help         This message"
