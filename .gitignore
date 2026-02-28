@@ -93,6 +93,7 @@ ir/
 *.tmp
 *.cache
 *.txt
+!CmakeLists.txt
 [Tt]mp/
 
 # ========================
