@@ -31,6 +31,10 @@ target_link_libraries(toyc PRIVATE toyc_lib)
 add_executable(toyc_test src/unified_test.cpp)
 target_link_libraries(toyc_test PRIVATE toyc_lib)
 
+# 寄存器分配调试工具
+add_executable(ra_debug src/ra_debug.cpp)
+target_link_libraries(ra_debug PRIVATE toyc_lib)
+
 # 安装
 install(TARGETS toyc DESTINATION bin)
 

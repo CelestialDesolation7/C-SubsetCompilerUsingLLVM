@@ -29,19 +29,22 @@ build:
 
 # ---------- 内置测试 ----------
 test: build
+	@bash scripts/generate_asm.sh $(SRC_DIR) > /dev/null
+	@bash scripts/generate_ir.sh $(SRC_DIR) > /dev/null
 	@./$(BUILD_DIR)/toyc_test $(SRC_DIR)
 
 # ---------- 批量汇编生成 ----------
 generate-asm: build
-	@bash scripts/generate_asm.sh $(SRC_DIR)
+	@bash scripts/generate_asm.sh $(SRC_DIR) > /dev/null
 
 # ---------- 批量 IR 生成 ----------
 generate-ir: build
-	@bash scripts/generate_ir.sh $(SRC_DIR)
+	@bash scripts/generate_ir.sh $(SRC_DIR) > /dev/null
 
 # ---------- 端到端验证（汇编生成静默，仅显示验证结果） ----------
 verify: build
 	@bash scripts/generate_asm.sh $(SRC_DIR) > /dev/null
+	@bash scripts/generate_ir.sh $(SRC_DIR) > /dev/null
 	@bash scripts/verify_output.sh $(SRC_DIR)
 
 # ---------- 单文件调试 ----------
