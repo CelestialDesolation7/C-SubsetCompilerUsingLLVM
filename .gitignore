@@ -80,7 +80,6 @@ test/verify_temp
 # Intermediate representations
 # ========================
 *.ll
-*.s
 
 # Generated assembly and IR directories
 asm/
