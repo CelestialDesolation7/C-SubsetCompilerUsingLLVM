@@ -102,11 +102,12 @@ void ReturnStmt::print(int level, std::ostream &os) const {
 }
 
 // BlockStmt 打印实现：输出 Block，然后打印块中所有语句，缩进层级加 1
+// 跳过 nullptr（空语句 `;` 解析产生的空节点）
 void BlockStmt::print(int level, std::ostream &os) const {
     printIndent(level, os);
     os << "Block\n";
     for (auto &s : stmts)
-        s->print(level + 1, os);
+        if (s) s->print(level + 1, os);
 }
 
 // FuncDef 打印实现：

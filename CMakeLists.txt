@@ -60,6 +60,15 @@ add_custom_target(generate_asm
     COMMENT "Generating ToyC + Clang assembly..."
 )
 
+# 自定义目标：批量生成 AST
+add_custom_target(generate_ast
+    COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/generate_ast.sh
+            ${CMAKE_SOURCE_DIR}/examples/compiler_inputs
+    DEPENDS toyc
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Generating ToyC AST output..."
+)
+
 # 自定义目标：端到端验证（Linux: clang + qemu-user, macOS: spike + pk）
 add_custom_target(verify
     COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/verify_output.sh

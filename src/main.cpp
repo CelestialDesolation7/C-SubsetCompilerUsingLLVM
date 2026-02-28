@@ -99,6 +99,10 @@ int main(int argc, char *argv[]) {
             std::cout << "\n";
         }
 
+        // 仅 --ast 时无需构建 IR / 代码生成，直接返回
+        if (!printIr && !printAsm && outputFile.empty())
+            return 0;
+
         // AST → 结构化 IR
         toyc::IRBuilder builder;
         auto mod = builder.buildModule(funcs);

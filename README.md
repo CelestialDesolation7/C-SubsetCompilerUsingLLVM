@@ -228,7 +228,7 @@ make
 wsl make
 ```
 
-编译完成后，可执行文件位于 `build/toyc` 和 `build/toyc_test`。
+编译完成后，可执行文件位于 `build/toyc`（编译器）、`build/toyc_test`（测试工具）和 `build/ra_debug`（寄存器分配调试工具）。
 
 ---
 
@@ -291,7 +291,7 @@ ToyC 提供四层测试体系——从快速的内置单元测试到完整的端
 
 ### 1. 内置单元测试
 
-对所有 36 个测试用例执行完整编译流水线（词法 → 语法 → AST → IR → 寄存器分配 → RISC-V 汇编），验证各阶段无异常：
+对所有 36 个测试用例执行完整编译流水线（词法 → 语法 → AST → IR → 寄存器分配 → RISC-V 汇编），验证各阶段无异常，并同时将 AST、IR、汇编产物保存到 `test/` 目录：
 
 ```bash
 make test
@@ -307,9 +307,9 @@ Testing: 36_test_while.c ... OK
 === Results: 36/36 passed ===
 ```
 
-### 2. 批量生成汇编 / IR
+### 2. 批量生成汇编 / IR / AST
 
-批量对所有测试用例同时调用 ToyC 和 Clang，生成汇编或 IR 以供人工对比分析。
+批量对所有测试用例同时调用 ToyC 和 Clang，生成汇编、IR 或 AST 以供人工对比分析。
 
 ```bash
 # 批量生成 RISC-V 汇编（ToyC + Clang）
@@ -319,6 +319,10 @@ make generate-asm
 # 批量生成 LLVM IR（ToyC + Clang）
 make generate-ir
 # 输出到 test/ir/：<base>_toyc.ll 和 <base>_clang.ll
+
+# 批量生成 AST
+make generate-ast
+# 输出到 test/ast/：<base>_toyc.ast
 ```
 
 ### 3. 端到端验证
@@ -378,8 +382,9 @@ wsl make debug FILE=01_minimal.c
 ### 清理
 
 ```bash
-make clean      # 清理 build/ 和 test/ 目录
-make rebuild    # 清理后重新编译
+make clean       # 清理 build/ 和 test/ 目录
+make clean-test  # 仅清理 test/ 目录（保留 build/）
+make rebuild     # 清理后重新编译
 ```
 
 ---
@@ -520,14 +525,14 @@ C-SubsetCompilerUsingLLVM/
 │   ├── ir_parser.cpp               # IRParser 实现（.ll 文本 → IR 结构）
 │   ├── reg_alloc.cpp               # 寄存器分配器实现
 │   ├── riscv_codegen.cpp           # RISC-V 代码生成实现
-│   └── unified_test.cpp            # 统一测试程序
-│
-├── include/toyc/                   # 公共头文件（同步自 src/include/）
+│   ├── unified_test.cpp            # 统一测试程序
+│   └── ra_debug.cpp                # 寄存器分配调试工具（交互式 IR 输入 + 分配结果输出）
 │
 ├── scripts/                        # 构建和测试脚本（macOS / Linux / WSL）
 │   ├── crt0.s                      #   RISC-V 启动代码（_start → main → ecall 退出）
 │   ├── generate_asm.sh             #   批量生成 ToyC + Clang 汇编
 │   ├── generate_ir.sh              #   批量生成 ToyC + Clang LLVM IR
+│   ├── generate_ast.sh             #   批量生成 ToyC AST 输出
 │   ├── verify_output.sh            #   端到端验证（macOS: spike+pk, Linux: QEMU）
 │   ├── verify_debug.sh             #   单文件调试模式（输出全部中间产物 + 验证）
 │   ├── setup_spike_rv32.sh         #   (macOS) 一键构建 rv32 proxy kernel
@@ -539,18 +544,20 @@ C-SubsetCompilerUsingLLVM/
 │       ├── ...                     #   ...
 │       └── 36_test_while.c         #   while 循环
 │
-├── docs/                           # 技术文档（6 篇）
+├── docs/                           # 技术文档（7 篇）
 │   ├── 编译流程详解.md
 │   ├── 从调用链理解的寄存器分配流程.md
 │   ├── 从调用链理解的目标代码生成.md
 │   ├── 汇编到验证完整流程.md
 │   ├── 寄存器分配与代码生成详解.md
-│   └── 线性扫描算法核心思路.md
+│   ├── 线性扫描算法核心思路.md
+│   └── 重构后项目错误修复日志.md
 │
 ├── assets/                         # 文档图片资源
 └── build/                          # 构建产物（自动生成）
     ├── toyc                        #   编译器主程序 (macOS: Mach-O / Linux: ELF)
-    └── toyc_test                   #   统一测试程序
+    ├── toyc_test                   #   统一测试程序
+    └── ra_debug                    #   寄存器分配调试工具
 ```
 
 ---
@@ -567,3 +574,4 @@ C-SubsetCompilerUsingLLVM/
 | [汇编到验证完整流程](docs/汇编到验证完整流程.md) | 从汇编输出到 QEMU 验证的端到端流程 |
 | [寄存器分配与代码生成详解](docs/寄存器分配与代码生成详解.md) | 寄存器分配与代码生成的算法细节 |
 | [线性扫描算法核心思路](docs/线性扫描算法核心思路.md) | 线性扫描寄存器分配核心算法解释 |
+| [重构后项目错误修复日志](docs/重构后项目错误修复日志.md) | 重构后修复的 11 个代码生成 / IR 构建错误记录 |
