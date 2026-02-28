@@ -58,6 +58,7 @@ void RISCVCodeGen::resetFunctionState() {
     totalStackSize_ = 0;
     frameOverhead_ = 0;
     callSaveSize_ = 0;
+    callArgAreaSize_ = 0;
     hasReturn_ = false;
 }
 
@@ -89,6 +90,20 @@ void RISCVCodeGen::generateFunction(Function &func) {
                 csRegs.insert(physReg);
         }
         callSaveSize_ = static_cast<int>(csRegs.size()) * 4;
+    }
+
+    // 预计算出栈参数区大小（超过 8 个参数的调用需要栈传参）
+    {
+        int maxStackArgs = 0;
+        for (auto &bb : func.blocks) {
+            for (auto &inst : bb->insts) {
+                if (inst->opcode == ir::Opcode::Call) {
+                    int extraArgs = std::max(0, static_cast<int>(inst->ops.size()) - 8);
+                    maxStackArgs = std::max(maxStackArgs, extraArgs);
+                }
+            }
+        }
+        callArgAreaSize_ = maxStackArgs * 4;
     }
 
     output_ += "    .globl " + func.name + "\n";
@@ -403,13 +418,57 @@ void RISCVCodeGen::genCall(const Instruction &inst) {
     }
     std::sort(savedRegs.begin(), savedRegs.end());
 
-    // 保存到栈（使用 sp 相对偏移，位于栈帧底部的空闲区域）
+    // 保存到栈（使用 sp 相对偏移，位于出栈参数区之上）
     std::map<int, int> regToSaveOffset; // 物理寄存器 → 保存偏移
-    int saveOffset = 0;
+    int saveOffset = callArgAreaSize_;
     for (int reg : savedRegs) {
         emit("sw " + regInfo_.getRegName(reg) + ", " + std::to_string(saveOffset) + "(sp)");
         regToSaveOffset[reg] = saveOffset;
         saveOffset += 4;
+    }
+
+    // 将超过 8 个的参数存放到出栈参数区 sp+0, sp+4, ...
+    for (size_t i = 8; i < inst.ops.size(); ++i) {
+        int argOffset = static_cast<int>(i - 8) * 4;
+        const auto &op = inst.ops[i];
+        if (op.isImm()) {
+            auto &allocator = funcAllocators_[currentFunction_];
+            int tmpReg = allocator->allocateSpillTempReg();
+            std::string tmpName = regInfo_.getRegName(tmpReg);
+            emit("li " + tmpName + ", " + std::to_string(op.immValue()));
+            emit("sw " + tmpName + ", " + std::to_string(argOffset) + "(sp)");
+        } else if (op.isVReg()) {
+            int vreg = op.regId();
+            auto physIt = alloc.vregToPhys.find(vreg);
+            if (physIt != alloc.vregToPhys.end()) {
+                int physReg = physIt->second;
+                auto saveIt = regToSaveOffset.find(physReg);
+                if (saveIt != regToSaveOffset.end()) {
+                    auto &allocator = funcAllocators_[currentFunction_];
+                    int tmpReg = allocator->allocateSpillTempReg();
+                    std::string tmpName = regInfo_.getRegName(tmpReg);
+                    emit("lw " + tmpName + ", " + std::to_string(saveIt->second) + "(sp)");
+                    emit("sw " + tmpName + ", " + std::to_string(argOffset) + "(sp)");
+                } else {
+                    std::string srcReg = regInfo_.getRegName(physReg);
+                    emit("sw " + srcReg + ", " + std::to_string(argOffset) + "(sp)");
+                }
+            } else {
+                auto stackIt = alloc.vregToStack.find(vreg);
+                if (stackIt != alloc.vregToStack.end()) {
+                    auto &allocator = funcAllocators_[currentFunction_];
+                    int tmpReg = allocator->allocateSpillTempReg();
+                    std::string tmpName = regInfo_.getRegName(tmpReg);
+                    if (stackIt->second > 0) {
+                        emit("lw " + tmpName + ", " + std::to_string(stackIt->second - 4) + "(s0)");
+                    } else {
+                        int spOffset = spillSlotToSpOffset(stackIt->second);
+                        emit("lw " + tmpName + ", " + std::to_string(spOffset) + "(sp)");
+                    }
+                    emit("sw " + tmpName + ", " + std::to_string(argOffset) + "(sp)");
+                }
+            }
+        }
     }
 
     // 移动参数到 a0-a7
@@ -458,7 +517,7 @@ void RISCVCodeGen::genCall(const Instruction &inst) {
         emit("mv " + defReg + ", a0");
 
     // 恢复 caller-saved 寄存器
-    saveOffset = 0;
+    saveOffset = callArgAreaSize_;
     for (int reg : savedRegs) {
         emit("lw " + regInfo_.getRegName(reg) + ", " + std::to_string(saveOffset) + "(sp)");
         saveOffset += 4;
@@ -500,14 +559,21 @@ std::string RISCVCodeGen::resolveUse(const Operand &op) {
         if (physIt != alloc.vregToPhys.end())
             return regInfo_.getRegName(physIt->second);
 
-        // 溢出到栈
+        // 溢出到栈或栈传入的参数
         auto stackIt = alloc.vregToStack.find(vreg);
         if (stackIt != alloc.vregToStack.end()) {
             auto &allocator = funcAllocators_[currentFunction_];
             int tmpReg = allocator->allocateSpillTempReg();
             std::string tmpName = regInfo_.getRegName(tmpReg);
-            int spOffset = spillSlotToSpOffset(stackIt->second);
-            emit("lw " + tmpName + ", " + std::to_string(spOffset) + "(sp)");
+            if (stackIt->second > 0) {
+                // 正偏移 = 栈传入参数：位于调用者帧底部，即 s0 + (slot-4)
+                int s0Offset = stackIt->second - 4;
+                emit("lw " + tmpName + ", " + std::to_string(s0Offset) + "(s0)");
+            } else {
+                // 负偏移 = 溢出槽
+                int spOffset = spillSlotToSpOffset(stackIt->second);
+                emit("lw " + tmpName + ", " + std::to_string(spOffset) + "(sp)");
+            }
             return tmpName;
         }
 
@@ -518,20 +584,25 @@ std::string RISCVCodeGen::resolveUse(const Operand &op) {
 
 // resolveDef：将 def 操作数解析为目标物理寄存器名（溢出时返回临时寄存器）
 std::string RISCVCodeGen::resolveDef(const Operand &op) {
-    if (!op.isVReg())
-        return "a0";
+    if (!op.isVReg()) {
+        lastDefRegName_ = "a0";
+        return lastDefRegName_;
+    }
 
     int vreg = op.regId();
     auto &alloc = funcAllocators_[currentFunction_]->getAllocationResult();
 
     auto physIt = alloc.vregToPhys.find(vreg);
-    if (physIt != alloc.vregToPhys.end())
-        return regInfo_.getRegName(physIt->second);
+    if (physIt != alloc.vregToPhys.end()) {
+        lastDefRegName_ = regInfo_.getRegName(physIt->second);
+        return lastDefRegName_;
+    }
 
     // 溢出 — 返回临时寄存器
     auto &allocator = funcAllocators_[currentFunction_];
     int tmpReg = allocator->allocateSpillTempReg();
-    return regInfo_.getRegName(tmpReg);
+    lastDefRegName_ = regInfo_.getRegName(tmpReg);
+    return lastDefRegName_;
 }
 
 // getAllocaOffset：查找 alloca vreg 对应的栈偏移（含 frameOverhead_ 以越过 ra/s0/callee-saved
@@ -542,8 +613,11 @@ int RISCVCodeGen::getAllocaOffset(int vreg) {
 }
 
 // spillSlotToSpOffset：将分配器的溢出槽偏移（负值，如 -4, -8）转换为 sp 正偏移
-// 帧底部布局：[0, callSaveSize) = caller-saved | [callSaveSize, callSaveSize+spillSize) = 溢出
-int RISCVCodeGen::spillSlotToSpOffset(int slot) { return callSaveSize_ + ((-slot) - 4); }
+// 帧底部布局：[0, argArea) = 出栈参数 | [argArea, argArea+callSave) = caller-saved
+//             | [argArea+callSave, argArea+callSave+spillSize) = 溢出
+int RISCVCodeGen::spillSlotToSpOffset(int slot) {
+    return callArgAreaSize_ + callSaveSize_ + ((-slot) - 4);
+}
 
 // spillDefIfNeeded：若 def 被溢出，将临时寄存器写回栈槽
 void RISCVCodeGen::spillDefIfNeeded(const Instruction &inst) {
@@ -552,12 +626,11 @@ void RISCVCodeGen::spillDefIfNeeded(const Instruction &inst) {
         return;
     auto &alloc = funcAllocators_[currentFunction_]->getAllocationResult();
     auto it = alloc.vregToStack.find(dr);
-    if (it != alloc.vregToStack.end() && allocaOffsets_.find(dr) == allocaOffsets_.end()) {
-        auto &allocator = funcAllocators_[currentFunction_];
-        int tmpReg = allocator->allocateSpillTempReg();
-        std::string tmpName = regInfo_.getRegName(tmpReg);
+    if (it != alloc.vregToStack.end() && it->second < 0 &&
+        allocaOffsets_.find(dr) == allocaOffsets_.end()) {
+        // 使用 resolveDef 保存的同一寄存器名（不依赖 counter 状态）
         int spOffset = spillSlotToSpOffset(it->second);
-        emit("sw " + tmpName + ", " + std::to_string(spOffset) + "(sp)");
+        emit("sw " + lastDefRegName_ + ", " + std::to_string(spOffset) + "(sp)");
     }
 }
 
@@ -580,13 +653,15 @@ void RISCVCodeGen::calculateStackFrame() {
     int calleeSavedCount = static_cast<int>(alloc.calleeSavedRegs.size());
     int spillSize = 0;
     for (auto &[vreg, slot] : alloc.vregToStack) {
-        int absSlot = (slot < 0) ? -slot : slot;
-        spillSize = std::max(spillSize, absSlot);
+        if (slot < 0) { // 仅计算溢出槽（负偏移），不计入传入栈参数（正偏移）
+            int absSlot = -slot;
+            spillSize = std::max(spillSize, absSlot);
+        }
     }
 
     // ra + s0 = 8 字节
     int frameOverhead = 8 + calleeSavedCount * 4;
-    totalStackSize_ = allocaSize + frameOverhead + spillSize + callSaveSize_;
+    totalStackSize_ = allocaSize + frameOverhead + spillSize + callSaveSize_ + callArgAreaSize_;
 
     // 对齐到 16
     totalStackSize_ = (totalStackSize_ + 15) & ~15;
