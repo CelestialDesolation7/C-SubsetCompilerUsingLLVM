@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <map>
+#include <set>
 #include <sstream>
 #include <toyc/riscv_codegen.h>
 
@@ -54,6 +56,8 @@ void RISCVCodeGen::resetFunctionState() {
     cmpMap_.clear();
     stackOffset_ = 0;
     totalStackSize_ = 0;
+    frameOverhead_ = 0;
+    callSaveSize_ = 0;
     hasReturn_ = false;
 }
 
@@ -70,6 +74,22 @@ void RISCVCodeGen::generateFunction(Function &func) {
     resetFunctionState();
     currentFunction_ = func.name;
     isMainFunction_ = (func.name == "main");
+
+    // 预计算帧开销（ra + s0 + callee-saved），供 alloca 偏移使用
+    auto &alloc = funcAllocators_[currentFunction_]->getAllocationResult();
+    int calleeSavedCount = static_cast<int>(alloc.calleeSavedRegs.size());
+    frameOverhead_ = 8 + calleeSavedCount * 4;
+
+    // 预计算函数调用时 caller-saved 保存区大小
+    {
+        std::set<int> csRegs;
+        for (auto &[vreg, physReg] : alloc.vregToPhys) {
+            if (regInfo_.isCallerSaved(physReg) &&
+                !funcAllocators_[currentFunction_]->isSpillTempReg(physReg))
+                csRegs.insert(physReg);
+        }
+        callSaveSize_ = static_cast<int>(csRegs.size()) * 4;
+    }
 
     output_ += "    .globl " + func.name + "\n";
     output_ += func.name + ":\n";
@@ -192,20 +212,22 @@ void RISCVCodeGen::genLoad(const Instruction &inst) {
 void RISCVCodeGen::genBinOp(const Instruction &inst) {
     std::string defReg = resolveDef(inst.def);
 
-    // addi 优化：add 且一个操作数为立即数
-    if (inst.opcode == Opcode::Add && inst.ops[1].isImm()) {
+    // addi 优化：add/sub 且立即数在 12 位有符号范围 [-2048, 2047] 内
+    auto inAddiRange = [](int v) { return v >= -2048 && v <= 2047; };
+
+    if (inst.opcode == Opcode::Add && inst.ops[1].isImm() && inAddiRange(inst.ops[1].immValue())) {
         std::string lhsReg = resolveUse(inst.ops[0]);
         emit("addi " + defReg + ", " + lhsReg + ", " + std::to_string(inst.ops[1].immValue()));
         spillDefIfNeeded(inst);
         return;
     }
-    if (inst.opcode == Opcode::Add && inst.ops[0].isImm()) {
+    if (inst.opcode == Opcode::Add && inst.ops[0].isImm() && inAddiRange(inst.ops[0].immValue())) {
         std::string rhsReg = resolveUse(inst.ops[1]);
         emit("addi " + defReg + ", " + rhsReg + ", " + std::to_string(inst.ops[0].immValue()));
         spillDefIfNeeded(inst);
         return;
     }
-    if (inst.opcode == Opcode::Sub && inst.ops[1].isImm()) {
+    if (inst.opcode == Opcode::Sub && inst.ops[1].isImm() && inAddiRange(-inst.ops[1].immValue())) {
         std::string lhsReg = resolveUse(inst.ops[0]);
         emit("addi " + defReg + ", " + lhsReg + ", " + std::to_string(-inst.ops[1].immValue()));
         spillDefIfNeeded(inst);
@@ -362,46 +384,85 @@ void RISCVCodeGen::genRet(const Instruction &inst) {
 void RISCVCodeGen::genCall(const Instruction &inst) {
     auto &alloc = funcAllocators_[currentFunction_]->getAllocationResult();
 
-    // 保存调用者保存的寄存器
+    // 确定 def 对应的物理寄存器（用于跳过保存/恢复）
+    int defPhysReg = -1;
+    if (inst.def.isVReg()) {
+        auto physIt = alloc.vregToPhys.find(inst.def.regId());
+        if (physIt != alloc.vregToPhys.end())
+            defPhysReg = physIt->second;
+    }
+
+    // 收集需要保存的调用者保存寄存器（排除溢出临时寄存器和 def 寄存器）
     std::vector<int> savedRegs;
     for (auto &[vreg, physReg] : alloc.vregToPhys) {
         if (regInfo_.isCallerSaved(physReg) &&
-            !funcAllocators_[currentFunction_]->isSpillTempReg(physReg)) {
+            !funcAllocators_[currentFunction_]->isSpillTempReg(physReg) && physReg != defPhysReg) {
             if (std::find(savedRegs.begin(), savedRegs.end(), physReg) == savedRegs.end())
                 savedRegs.push_back(physReg);
         }
     }
     std::sort(savedRegs.begin(), savedRegs.end());
 
-    // 保存到栈
-    int saveOffset = stackOffset_;
+    // 保存到栈（使用 sp 相对偏移，位于栈帧底部的空闲区域）
+    std::map<int, int> regToSaveOffset; // 物理寄存器 → 保存偏移
+    int saveOffset = 0;
     for (int reg : savedRegs) {
+        emit("sw " + regInfo_.getRegName(reg) + ", " + std::to_string(saveOffset) + "(sp)");
+        regToSaveOffset[reg] = saveOffset;
         saveOffset += 4;
-        emit("sw " + regInfo_.getRegName(reg) + ", -" + std::to_string(saveOffset) + "(s0)");
     }
 
     // 移动参数到 a0-a7
+    // 直接从已保存的栈位置/溢出槽加载到目标寄存器，彻底避免并行移动冲突
     for (size_t i = 0; i < inst.ops.size() && i < 8; ++i) {
-        std::string argReg = resolveUse(inst.ops[i]);
         std::string target = "a" + std::to_string(i);
-        if (argReg != target)
-            emit("mv " + target + ", " + argReg);
+        const auto &op = inst.ops[i];
+
+        if (op.isImm()) {
+            emit("li " + target + ", " + std::to_string(op.immValue()));
+        } else if (op.isBoolLit()) {
+            emit("li " + target + ", " + std::to_string(op.boolValue() ? 1 : 0));
+        } else if (op.isVReg()) {
+            int vreg = op.regId();
+            // 分配到物理寄存器的 vreg
+            auto physIt = alloc.vregToPhys.find(vreg);
+            if (physIt != alloc.vregToPhys.end()) {
+                int physReg = physIt->second;
+                auto saveIt = regToSaveOffset.find(physReg);
+                if (saveIt != regToSaveOffset.end()) {
+                    // caller-saved：从已保存的栈位置加载（避免并行移动冲突）
+                    emit("lw " + target + ", " + std::to_string(saveIt->second) + "(sp)");
+                } else {
+                    // callee-saved：不会被覆盖，直接 mv
+                    std::string srcReg = regInfo_.getRegName(physReg);
+                    if (srcReg != target)
+                        emit("mv " + target + ", " + srcReg);
+                }
+            } else {
+                // 溢出到栈的 vreg：从溢出槽直接加载
+                auto stackIt = alloc.vregToStack.find(vreg);
+                if (stackIt != alloc.vregToStack.end()) {
+                    int spOffset = spillSlotToSpOffset(stackIt->second);
+                    emit("lw " + target + ", " + std::to_string(spOffset) + "(sp)");
+                }
+            }
+        }
     }
 
     // 调用
     emit("call " + inst.callee);
 
-    // 恢复 caller-saved 寄存器
-    saveOffset = stackOffset_;
-    for (int reg : savedRegs) {
-        saveOffset += 4;
-        emit("lw " + regInfo_.getRegName(reg) + ", -" + std::to_string(saveOffset) + "(s0)");
-    }
-
-    // 结果从 a0 移到目标寄存器
+    // 结果从 a0 移到目标寄存器（在恢复 caller-saved 之前，防止 a0 被覆盖）
     std::string defReg = resolveDef(inst.def);
     if (defReg != "a0")
         emit("mv " + defReg + ", a0");
+
+    // 恢复 caller-saved 寄存器
+    saveOffset = 0;
+    for (int reg : savedRegs) {
+        emit("lw " + regInfo_.getRegName(reg) + ", " + std::to_string(saveOffset) + "(sp)");
+        saveOffset += 4;
+    }
 
     spillDefIfNeeded(inst);
 }
@@ -445,7 +506,8 @@ std::string RISCVCodeGen::resolveUse(const Operand &op) {
             auto &allocator = funcAllocators_[currentFunction_];
             int tmpReg = allocator->allocateSpillTempReg();
             std::string tmpName = regInfo_.getRegName(tmpReg);
-            emit("lw " + tmpName + ", " + std::to_string(stackIt->second) + "(sp)");
+            int spOffset = spillSlotToSpOffset(stackIt->second);
+            emit("lw " + tmpName + ", " + std::to_string(spOffset) + "(sp)");
             return tmpName;
         }
 
@@ -472,11 +534,16 @@ std::string RISCVCodeGen::resolveDef(const Operand &op) {
     return regInfo_.getRegName(tmpReg);
 }
 
-// getAllocaOffset：查找 alloca vreg 对应的栈偏移
+// getAllocaOffset：查找 alloca vreg 对应的栈偏移（含 frameOverhead_ 以越过 ra/s0/callee-saved
+// 区域）
 int RISCVCodeGen::getAllocaOffset(int vreg) {
     auto it = allocaOffsets_.find(vreg);
-    return (it != allocaOffsets_.end()) ? it->second : 0;
+    return (it != allocaOffsets_.end()) ? it->second + frameOverhead_ : 0;
 }
+
+// spillSlotToSpOffset：将分配器的溢出槽偏移（负值，如 -4, -8）转换为 sp 正偏移
+// 帧底部布局：[0, callSaveSize) = caller-saved | [callSaveSize, callSaveSize+spillSize) = 溢出
+int RISCVCodeGen::spillSlotToSpOffset(int slot) { return callSaveSize_ + ((-slot) - 4); }
 
 // spillDefIfNeeded：若 def 被溢出，将临时寄存器写回栈槽
 void RISCVCodeGen::spillDefIfNeeded(const Instruction &inst) {
@@ -489,7 +556,8 @@ void RISCVCodeGen::spillDefIfNeeded(const Instruction &inst) {
         auto &allocator = funcAllocators_[currentFunction_];
         int tmpReg = allocator->allocateSpillTempReg();
         std::string tmpName = regInfo_.getRegName(tmpReg);
-        emit("sw " + tmpName + ", " + std::to_string(it->second) + "(sp)");
+        int spOffset = spillSlotToSpOffset(it->second);
+        emit("sw " + tmpName + ", " + std::to_string(spOffset) + "(sp)");
     }
 }
 
@@ -518,7 +586,7 @@ void RISCVCodeGen::calculateStackFrame() {
 
     // ra + s0 = 8 字节
     int frameOverhead = 8 + calleeSavedCount * 4;
-    totalStackSize_ = allocaSize + frameOverhead + spillSize;
+    totalStackSize_ = allocaSize + frameOverhead + spillSize + callSaveSize_;
 
     // 对齐到 16
     totalStackSize_ = (totalStackSize_ + 15) & ~15;

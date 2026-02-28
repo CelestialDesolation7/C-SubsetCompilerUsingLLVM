@@ -17,7 +17,7 @@ namespace toyc {
 
 // LiveRange：一段连续的活跃范围 [start, end]
 struct LiveRange {
-    int start, end; // 范围的起止位置（线性化编号）
+    int start, end;                  // 范围的起止位置（线性化编号）
     LiveRange(int s, int e) : start(s), end(e) {}
     bool operator<(const LiveRange &o) const { return start < o.start; }
     // 判断两个范围是否重叠
@@ -29,10 +29,10 @@ struct LiveRange {
 // LiveInterval：虚拟寄存器的活跃区间，由多个 LiveRange 合并而成
 class LiveInterval {
   public:
-    int vreg = -1;                 // 对应的虚拟寄存器 ID
-    std::vector<LiveRange> ranges; // 排序后的活跃范围列表
-    int spillSlot = -1;            // 溢出栈槽偏移，-1 表示未溢出
-    int physReg = -1;              // 分配到的物理寄存器 ID，-1 表示未分配
+    int vreg = -1;                   // 对应的虚拟寄存器 ID
+    std::vector<LiveRange> ranges;   // 排序后的活跃范围列表
+    int spillSlot = -1;              // 溢出栈槽偏移，-1 表示未溢出
+    int physReg = -1;                // 分配到的物理寄存器 ID，-1 表示未分配
 
     LiveInterval() = default;
     explicit LiveInterval(int v) : vreg(v) {}
@@ -54,12 +54,12 @@ class LiveInterval {
 
 // PhysReg：物理寄存器描述
 struct PhysReg {
-    int id = 0;               // 寄存器编号（x0-x31）
-    std::string name;         // 寄存器名称（如 "a0", "s1", "t2"）
-    bool callerSaved = false; // 是否为调用者保存寄存器
-    bool calleeSaved = false; // 是否为被调用者保存寄存器
-    bool reserved = false;    // 是否为保留寄存器（不参与分配）
-    int priority = 0;         // 分配优先级，值越小越优先选用
+    int id = 0;                      // 寄存器编号（x0-x31）
+    std::string name;                // 寄存器名称（如 "a0", "s1", "t2"）
+    bool callerSaved = false;        // 是否为调用者保存寄存器
+    bool calleeSaved = false;        // 是否为被调用者保存寄存器
+    bool reserved = false;           // 是否为保留寄存器（不参与分配）
+    int priority = 0;                // 分配优先级，值越小越优先选用
 
     PhysReg() = default;
     PhysReg(int i, const std::string &n, bool caller, bool callee, bool res, int prio)
@@ -77,17 +77,17 @@ struct PhysRegComparator {
 // 描述 x0-x31 共 32 个寄存器的属性及可分配集合
 class RegInfo {
   public:
-    std::vector<PhysReg> physRegs;                    // 32 个物理寄存器描述
-    std::set<int, PhysRegComparator> allocatableRegs; // 可参与分配的寄存器集合
+    std::vector<PhysReg> physRegs;                          // 32 个物理寄存器描述
+    std::set<int, PhysRegComparator> allocatableRegs;       // 可参与分配的寄存器集合
 
     // 构造函数：初始化 RV32I 寄存器描述
     RegInfo();
 
-    bool isReserved(int id) const;    // 是否为保留寄存器
-    bool isCallerSaved(int id) const; // 是否为调用者保存
-    bool isCalleeSaved(int id) const; // 是否为被调用者保存
+    bool isReserved(int id) const;                          // 是否为保留寄存器
+    bool isCallerSaved(int id) const;                       // 是否为调用者保存
+    bool isCalleeSaved(int id) const;                       // 是否为被调用者保存
     const PhysReg &getReg(int id) const { return physRegs[id]; }
-    std::string getRegName(int id) const; // 获取寄存器名称
+    std::string getRegName(int id) const;                   // 获取寄存器名称
 };
 
 // ======================== 活跃性分析 ========================
@@ -136,11 +136,11 @@ class LiveIntervalBuilder {
 // AllocationResult：寄存器分配的最终输出
 class AllocationResult {
   public:
-    std::unordered_map<int, int> vregToPhys;  // vreg → 物理寄存器 ID（-1 = 已溢出）
-    std::unordered_map<int, int> vregToStack; // vreg → 栈字节偏移（仅溢出的 vreg）
+    std::unordered_map<int, int> vregToPhys;          // vreg → 物理寄存器 ID（-1 = 已溢出）
+    std::unordered_map<int, int> vregToStack;         // vreg → 栈字节偏移（仅溢出的 vreg）
     std::unordered_map<int, int> paramVregToLocation; // 参数 vreg → 位置（寄存器 ID 或栈偏移）
     std::set<int> usedPhysRegs;                       // 实际使用过的物理寄存器集合
-    std::set<int> calleeSavedRegs; // 使用过的被调用者保存寄存器（需在函数入口/出口保护）
+    std::set<int> calleeSavedRegs;                    // 使用过的被调用者保存寄存器（需在函数入口/出口保护）
 };
 
 // ======================== 线性扫描分配器 ========================
@@ -181,20 +181,20 @@ class LinearScanAllocator {
     void dumpIntervals(const std::unordered_map<int, std::unique_ptr<LiveInterval>> &intervals);
 
   private:
-    const RegInfo &regInfo_;                 // 目标架构寄存器信息
-    bool debugMode_ = false;                 // 调试模式开关
-    std::ostream *debugOutput_ = &std::cout; // 调试输出流
+    const RegInfo &regInfo_;                                // 目标架构寄存器信息
+    bool debugMode_ = false;                                // 调试模式开关
+    std::ostream *debugOutput_ = &std::cout;                // 调试输出流
 
-    std::vector<bool> isPhysRegUsed_;               // 物理寄存器使用标记（32 位）
-    std::set<int, PhysRegComparator> freePhysRegs_; // 当前空闲的物理寄存器集合
+    std::vector<bool> isPhysRegUsed_;                       // 物理寄存器使用标记（32 位）
+    std::set<int, PhysRegComparator> freePhysRegs_;         // 当前空闲的物理寄存器集合
 
-    int spillTempReg1_ = 5, spillTempReg2_ = 6; // 溢出临时寄存器 ID（t0, t1）
-    bool spillTempCounter_ = false;             // 交替选择计数器
-    std::set<int> allocatedVregs_;              // 已分配的虚拟寄存器集合
+    int spillTempReg1_ = 5, spillTempReg2_ = 6;            // 溢出临时寄存器 ID（t0, t1）
+    bool spillTempCounter_ = false;                         // 交替选择计数器
+    std::set<int> allocatedVregs_;                          // 已分配的虚拟寄存器集合
 
-    std::vector<LiveInterval *> active_; // 当前活跃的区间列表（按结束位置排序）
-    AllocationResult result_;            // 分配结果
-    int nextSpillSlot_ = 0;              // 下一个溢出槽编号
+    std::vector<LiveInterval *> active_;                    // 当前活跃的区间列表（按结束位置排序）
+    AllocationResult result_;                               // 分配结果
+    int nextSpillSlot_ = 0;                                 // 下一个溢出槽编号
 
     // -------- 参数处理 --------
     // 将参数 vreg 绑定到 a0-a7 或栈位置

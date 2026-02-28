@@ -34,6 +34,8 @@ class RISCVCodeGen {
     std::map<int, int> allocaOffsets_; // alloca vreg → 栈偏移
     int stackOffset_ = 0;              // 已分配的局部变量栈空间
     int totalStackSize_ = 0;           // 函数总栈帧大小
+    int frameOverhead_ = 0;            // ra + s0 + callee-saved 字节数
+    int callSaveSize_ = 0;             // 函数调用时 caller-saved 保存区字节数
 
     // -------- 比较信息延迟合并到分支（branch fusion） --------
     struct CmpInfo {
@@ -66,6 +68,7 @@ class RISCVCodeGen {
     std::string resolveUse(const ir::Operand &op); // 将 Operand 解析为物理寄存器名（含溢出加载）
     std::string resolveDef(const ir::Operand &op); // 将 def Operand 解析为目标寄存器名
     int getAllocaOffset(int vreg);                 // 查找 alloca vreg 的栈偏移
+    int spillSlotToSpOffset(int slot);               // 溢出槽偏移 → sp 正偏移
     void spillDefIfNeeded(const ir::Instruction &inst); // 若 def 被溢出，写回栈
 
     // -------- 汇编输出 --------

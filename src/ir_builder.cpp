@@ -148,6 +148,7 @@ void IRBuilder::buildFunction(const std::shared_ptr<FuncDef> &funcDef) {
             emit(Instruction::makeRetVoid());
     }
 
+    func->maxVregId = vregCounter_;
     module_->functions.push_back(std::move(func));
 }
 
@@ -255,9 +256,10 @@ void IRBuilder::buildIf(const std::shared_ptr<IfStmt> &ifStmt) {
     buildStmt(ifStmt->elseStmt);
     emit(Instruction::makeBr(Operand::label(endName)));
 
-    // Merge 块
+    // Merge 块 —— 来自不同分支，缓存的 load 值无效
     auto *endBB = createBlock(endName);
     setInsertBlock(endBB);
+    loadedValues_.clear();
 }
 
 // buildWhile：生成 while 循环 IR
@@ -446,6 +448,7 @@ Operand IRBuilder::buildLogicalOp(const std::string &op, const ASTPtr &lhs, cons
         std::string rhsName = newLabel("land_rhs");
         std::string falseName = newLabel("land_false");
         std::string endName = newLabel("land_end");
+        labelCounter_++;
 
         emit(Instruction::makeCondBr(lhsOp, Operand::label(rhsName), Operand::label(falseName)));
 
@@ -469,6 +472,7 @@ Operand IRBuilder::buildLogicalOp(const std::string &op, const ASTPtr &lhs, cons
         std::string trueName = newLabel("lor_true");
         std::string rhsName = newLabel("lor_rhs");
         std::string endName = newLabel("lor_end");
+        labelCounter_++;
 
         emit(Instruction::makeCondBr(lhsOp, Operand::label(trueName), Operand::label(rhsName)));
 

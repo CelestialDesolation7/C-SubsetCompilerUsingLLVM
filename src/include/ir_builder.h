@@ -17,13 +17,13 @@ class IRBuilder {
     std::unique_ptr<ir::Module> buildModule(const std::vector<std::shared_ptr<FuncDef>> &funcs);
 
   private:
-    int vregCounter_ = 0;         // 虚拟寄存器计数器
-    int labelCounter_ = 0;        // 标签计数器
-    std::string currentFuncName_; // 当前处理的函数名
-    bool isMainFunction_ = false; // 标记是否为 main 函数
-    bool hasReturn_ = false;      // 标记函数是否已有返回语句
+    int vregCounter_ = 0;          // 虚拟寄存器计数器
+    int labelCounter_ = 0;         // 标签计数器
+    std::string currentFuncName_;  // 当前处理的函数名
+    bool isMainFunction_ = false;  // 标记是否为 main 函数
+    bool hasReturn_ = false;       // 标记函数是否已有返回语句
 
-    ir::Module *module_ = nullptr;        // 当前模块指针
+    ir::Module *module_ = nullptr;       // 当前模块指针
     ir::Function *currentFunc_ = nullptr; // 当前函数指针
     ir::BasicBlock *currentBB_ = nullptr; // 当前基本块（指令插入点）
 
@@ -50,8 +50,8 @@ class IRBuilder {
 
     // -------- 作用域管理 --------
 
-    void enterScope(); // 进入新作用域
-    void exitScope();  // 退出当前作用域
+    void enterScope();  // 进入新作用域
+    void exitScope();   // 退出当前作用域
     // 在当前作用域添加变量（变量名 → alloca 寄存器）
     void addVariable(const std::string &name, const ir::Operand &allocaReg);
     // 从当前作用域开始向外查找变量

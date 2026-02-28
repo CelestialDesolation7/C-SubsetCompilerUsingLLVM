@@ -28,7 +28,7 @@ C 源代码 → 词法分析 → 语法分析 → AST → IRBuilder → ir::Modu
 ### 技术栈
 
 - **语言**: C++20
-- **构建系统**: CMake (≥ 3.16) + Ninja / MinGW Makefiles / Unix Makefiles
+- **构建系统**: CMake (≥ 3.16) + Unix Makefiles (WSL)
 - **目标架构**: RISC-V 32-bit (RV32I)
 - **中间表示**: 结构化 LLVM IR (SSA 形式)，具有完整的 Opcode 枚举和类型化指令模型
 - **寄存器分配**: 线性扫描算法
@@ -181,23 +181,18 @@ C 源代码 → 词法分析 → 语法分析 → AST → IRBuilder → ir::Modu
 
 ### 环境要求
 
-**Windows 构建（必需）**:
-- CMake ≥ 3.16
-- g++ ≥ 13（支持 C++20），推荐 MinGW-w64
-- Ninja 或 MinGW Make
-
-**WSL 端到端验证（可选但推荐）**:
-- WSL 2（Ubuntu 推荐）
+- Windows 11 + **WSL 2**（Ubuntu 推荐）
+- CMake ≥ 3.16 + g++ ≥ 13（C++20）
 - clang（含 RISC-V 后端）
 - qemu-user（RISC-V 用户态模拟器）
 - riscv64-unknown-elf-gcc（可选，提供 libgcc 软件除法支持）
 
-### 安装 WSL 依赖
+### 安装依赖
 
 ```bash
 # 在 WSL (Ubuntu) 中执行
 sudo apt update
-sudo apt install clang qemu-user
+sudo apt install build-essential cmake clang qemu-user
 # 可选：安装 RISC-V 工具链以获取 libgcc
 sudo apt install gcc-riscv64-unknown-elf
 ```
@@ -205,25 +200,14 @@ sudo apt install gcc-riscv64-unknown-elf
 ### 编译项目
 
 ```bash
-# 方式一：使用 Makefile（推荐，自动检测平台）
+# 从 Windows PowerShell 通过 WSL 编译（推荐）
+wsl make
+
+# 或在 WSL 终端中直接执行
 make
-
-# 方式二：手动 CMake（Windows）
-cmake -S . -B build -G Ninja
-cmake --build build --parallel
-
-# 方式三：手动 CMake（WSL / Linux）
-cmake -S . -B build-linux
-cmake --build build-linux --parallel
 ```
 
-Makefile 会自动检测运行环境：
-- **Windows (MinGW)**：构建到 `build/`，尝试 Ninja → MinGW Makefiles
-- **Linux / WSL**：构建到 `build-linux/`，使用 Unix Makefiles
-
-编译完成后，可执行文件位于：
-- Windows: `build/toyc.exe`、`build/toyc_test.exe`
-- Linux/WSL: `build-linux/toyc`、`build-linux/toyc_test`
+编译完成后，可执行文件位于 `build/toyc` 和 `build/toyc_test`。
 
 ---
 
@@ -262,6 +246,9 @@ Makefile 会自动检测运行环境：
 
 # 6. 从 .ll 文件生成汇编（支持 IR 输入）
 ./build/toyc test/ir/01_minimal_toyc.ll --asm
+
+# 以上命令均在 WSL 中执行，也可从 PowerShell 调用：
+# wsl ./build/toyc examples/compiler_inputs/01_minimal.c --ir
 ```
 
 ### Makefile 便捷目标
@@ -279,21 +266,14 @@ make 01_minimal.ll
 ## 测试与验证
 
 ToyC 提供四层测试体系——从快速的内置单元测试到完整的 QEMU 端到端验证。
-WSL 相关测试需要在 WSL 环境中运行（因为 clang + qemu 安装于 WSL）。
+所有命令均通过 WSL 执行（从 PowerShell 调用时加 `wsl` 前缀）。
 
-### 1. 内置单元测试（不需要 WSL）
+### 1. 内置单元测试
 
 对所有 36 个测试用例执行完整编译流水线（词法 → 语法 → AST → IR → 寄存器分配 → RISC-V 汇编），验证各阶段无异常：
 
 ```bash
-# 使用 Makefile（自动选择正确的构建目录）
 make test
-
-# 或直接运行（Windows）
-./build/toyc_test examples/compiler_inputs
-
-# 或直接运行（WSL / Linux）
-./build-linux/toyc_test examples/compiler_inputs
 ```
 
 输出示例：
@@ -306,16 +286,11 @@ Testing: 36_test_while.c ... OK
 === Results: 36/36 passed ===
 ```
 
-### 2. 批量生成汇编 / IR（需在 WSL 中运行）
+### 2. 批量生成汇编 / IR
 
 批量对所有测试用例同时调用 ToyC 和 Clang，生成汇编或 IR 以供人工对比分析。
 
-> **注意**: 这些目标不会重新编译项目，只检查 `toyc` 是否已存在。请先在对应环境执行 `make` 编译。
-> 脚本会自动搜索 `build-linux/toyc`、`build/toyc`、`build/toyc.exe`。
-
 ```bash
-# 在 WSL 中运行，或通过 PowerShell: wsl make generate-asm
-
 # 批量生成 RISC-V 汇编（ToyC + Clang）
 make generate-asm
 # 输出到 test/asm/：<base>_toyc.s 和 <base>_clang.s
@@ -325,23 +300,13 @@ make generate-ir
 # 输出到 test/ir/：<base>_toyc.ll 和 <base>_clang.ll
 ```
 
-也可直接调用脚本：
-```bash
-bash scripts/generate_asm.sh [源目录]
-bash scripts/generate_ir.sh [源目录]
-```
-
-### 3. 端到端验证（需在 WSL 中运行，需 clang + qemu）
+### 3. 端到端验证（需 clang + qemu）
 
 对每个测试用例，分别将 ToyC 和 Clang 生成的汇编**链接为 RISC-V ELF** 并在 **QEMU** 中执行，对比两者的退出码和输出，确保 ToyC 生成的代码行为与 Clang 完全一致。
 
 ```bash
-# 一键验证全部（先 generate-asm，再 verify）
+# 一键验证（自动生成汇编 + 验证，汇编生成过程静默）
 make verify
-
-# 也可手动分步执行
-make generate-asm
-bash scripts/verify_output.sh examples/compiler_inputs
 ```
 
 验证流程：
@@ -353,15 +318,12 @@ Clang ASM → Clang 汇编器 → ELF → QEMU 执行 → 退出码 B
 
 > **说明**: 链接使用自定义启动代码 `scripts/crt0.s`（调用 `main` 后执行 `ecall` 退出），无需标准 C 库。
 
-### 4. 单文件调试模式（需在 WSL 中运行）
+### 4. 单文件调试模式
 
 对单个文件输出所有中间产物（AST → IR → ASM），同时生成 Clang 参考输出，并自动进行端到端验证：
 
 ```bash
 make debug FILE=01_minimal.c
-
-# 或直接调用脚本
-bash scripts/verify_debug.sh examples/compiler_inputs 01_minimal.c
 ```
 
 调试模式流程（6 步）：
@@ -372,30 +334,21 @@ bash scripts/verify_debug.sh examples/compiler_inputs 01_minimal.c
 5. 复制产物到 `test/asm/` 和 `test/ir/` 目录
 6. 调用 `verify_output.sh` 执行端到端验证
 
-### 5. 从 Windows PowerShell 调用 WSL 测试
+### 5. 从 Windows PowerShell 调用
 
-若在 Windows 环境开发，可通过 `wsl` 命令调用测试脚本：
+在 Windows 环境开发时，所有 make 指令通过 `wsl` 前缀调用：
 
 ```powershell
-# 在 PowerShell 中执行 WSL 测试
-wsl bash scripts/generate_asm.sh examples/compiler_inputs
-wsl bash scripts/verify_output.sh examples/compiler_inputs
-wsl bash scripts/verify_debug.sh examples/compiler_inputs 01_minimal.c
-
-# 或直接在 WSL 中运行 make
-wsl make verify
+wsl make              # 编译
+wsl make test         # 运行单元测试
+wsl make verify       # 端到端验证
 wsl make debug FILE=01_minimal.c
 ```
-
-> **注意**: WSL 下的 `generate-asm`、`generate-ir`、`verify`、`debug` 等目标**不会触发重新编译**，
-> 而是直接使用已有的 `toyc` 可执行文件（自动搜索 `build-linux/toyc`、`build/toyc.exe` 等）。
-> 这避免了 Windows CMakeCache 与 WSL 路径冲突的问题。
-> 若需要 Linux 原生二进制，可在 WSL 中执行 `make`，产物在 `build-linux/`。
 
 ### 清理
 
 ```bash
-make clean      # 清理 build/、build-linux/ 和 test/ 目录
+make clean      # 清理 build/ 和 test/ 目录
 make rebuild    # 清理后重新编译
 ```
 
@@ -513,8 +466,8 @@ main:
 
 ```
 C-SubsetCompilerUsingLLVM/
-├── CMakeLists.txt                  # CMake 构建配置（Ninja / MinGW Makefiles / Unix Makefiles）
-├── Makefile                        # 包装器：自动检测平台，build / test / verify / debug / clean
+├── CMakeLists.txt                  # CMake 构建配置
+├── Makefile                        # 包装器：build / test / verify / debug / clean
 ├── README.md                       # 本文档
 │
 ├── src/                            # 源代码
@@ -564,10 +517,7 @@ C-SubsetCompilerUsingLLVM/
 │   └── 线性扫描算法核心思路.md
 │
 ├── assets/                         # 文档图片资源
-├── build/                          # Windows 构建产物（自动生成）
-│   ├── toyc.exe                    #   编译器主程序
-│   └── toyc_test.exe               #   统一测试程序
-└── build-linux/                    # Linux/WSL 构建产物（自动生成）
+└── build/                          # 构建产物（自动生成）
     ├── toyc                        #   编译器主程序 (ELF)
     └── toyc_test                   #   统一测试程序 (ELF)
 ```
