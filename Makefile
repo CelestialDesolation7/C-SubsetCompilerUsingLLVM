@@ -1,24 +1,35 @@
 # ─── CMake 包装器 Makefile ──────────────────────────────────────
 #
-# 使用方式（从 Windows PowerShell 通过 WSL 调用）:
-#   wsl make              编译项目
-#   wsl make test         运行 36 个内置单元测试
-#   wsl make generate-asm 批量生成 ToyC + Clang 汇编
-#   wsl make generate-ir  批量生成 ToyC + Clang LLVM IR
-#   wsl make verify       端到端验证：生成汇编 → 链接 → QEMU 运行 → 对比结果
-#   wsl make debug FILE=01_minimal.c   单文件调试
-#   wsl make clean        清理构建与测试产物
+# 使用方式:
+#   make              编译项目
+#   make test         运行 36 个内置单元测试
+#   make generate-asm 批量生成 ToyC + Clang 汇编
+#   make generate-ir  批量生成 ToyC + Clang LLVM IR
+#   make verify       端到端验证：汇编 → 链接 → 模拟运行 → 对比结果
+#   make debug FILE=01_minimal.c   单文件调试
+#   make setup-spike  (macOS) 构建 rv32 proxy kernel 用于 spike 验证
+#   make clean        清理构建与测试产物
 #
-# 前置条件:
-#   - WSL (Ubuntu) + CMake ≥ 3.16 + g++ ≥ 13 (C++20)
-#   - clang (RISC-V 后端) + qemu-user
+# 支持平台:
+#   - macOS (Apple Clang / Homebrew Clang) + CMake ≥ 3.16
+#     验证依赖: spike + riscv-gnu-toolchain (通过 Homebrew)
+#   - Linux / WSL (Ubuntu) + CMake ≥ 3.16 + g++ ≥ 13 (C++20)
+#     验证依赖: clang + qemu-user
+#
+# macOS 安装依赖:
+#     brew install cmake
+#     brew tap riscv-software-src/riscv
+#     brew install riscv-isa-sim riscv-gnu-toolchain
+#     make setup-spike    # 一键构建 rv32 pk
+#
+# Linux/WSL 安装依赖:
 #     sudo apt install build-essential cmake clang qemu-user
 # ─────────────────────────────────────────────────────────────────
 
 BUILD_DIR := build
 SRC_DIR   := examples/compiler_inputs
 
-.PHONY: all build test generate-asm generate-ir verify debug clean rebuild help
+.PHONY: all build test generate-asm generate-ir verify debug setup-spike clean rebuild help
 
 all: build
 
@@ -41,11 +52,15 @@ generate-asm: build
 generate-ir: build
 	@bash scripts/generate_ir.sh $(SRC_DIR) > /dev/null
 
-# ---------- 端到端验证（汇编生成静默，仅显示验证结果） ----------
+# ---------- 端到端验证（Linux: QEMU, macOS: spike+pk） ----------
 verify: build
 	@bash scripts/generate_asm.sh $(SRC_DIR) > /dev/null
 	@bash scripts/generate_ir.sh $(SRC_DIR) > /dev/null
 	@bash scripts/verify_output.sh $(SRC_DIR)
+
+# ---------- macOS: 构建 rv32 proxy kernel ----------
+setup-spike:
+	@bash scripts/setup_spike_rv32.sh
 
 # ---------- 单文件调试 ----------
 # 用法: make debug FILE=01_minimal.c
@@ -78,8 +93,9 @@ help:
 	@echo "  make test         Run 36 built-in unit tests"
 	@echo "  make generate-asm Generate ToyC + Clang assembly"
 	@echo "  make generate-ir  Generate ToyC + Clang LLVM IR"
-	@echo "  make verify       End-to-end verify (asm → link → QEMU → diff)"
+	@echo "  make verify       End-to-end verify (asm → link → emulate → diff)"
 	@echo "  make debug FILE=xx.c  Single-file debug (AST/IR/ASM + verify)"
+	@echo "  make setup-spike  (macOS) Build rv32 proxy kernel for spike"
 	@echo "  make clean        Remove build/ and test/"
 	@echo "  make rebuild      Clean then build"
 	@echo "  make help         This message"

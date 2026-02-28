@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# macOS: Apple Clang 需要额外标志以支持 C++20 特性
+if(APPLE)
+    add_compile_options(-Wno-unused-command-line-argument)
+endif()
+
 # 头文件目录
 include_directories(${CMAKE_SOURCE_DIR}/src/include)
 
@@ -46,7 +51,7 @@ add_custom_target(test_all
     COMMENT "Running 36 unified tests..."
 )
 
-# 自定义目标：批量生成汇编（需在 WSL / Linux 运行）
+# 自定义目标：批量生成汇编（跨平台：macOS / Linux / WSL）
 add_custom_target(generate_asm
     COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/generate_asm.sh
             ${CMAKE_SOURCE_DIR}/examples/compiler_inputs
@@ -55,7 +60,7 @@ add_custom_target(generate_asm
     COMMENT "Generating ToyC + Clang assembly..."
 )
 
-# 自定义目标：端到端验证（需在 WSL / Linux 运行，依赖 clang + qemu）
+# 自定义目标：端到端验证（Linux: clang + qemu-user, macOS: spike + pk）
 add_custom_target(verify
     COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/verify_output.sh
             ${CMAKE_SOURCE_DIR}/examples/compiler_inputs

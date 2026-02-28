@@ -28,7 +28,8 @@ C 源代码 → 词法分析 → 语法分析 → AST → IRBuilder → ir::Modu
 ### 技术栈
 
 - **语言**: C++20
-- **构建系统**: CMake (≥ 3.16) + Unix Makefiles (WSL)
+- **构建系统**: CMake (≥ 3.16) + Unix Makefiles
+- **支持平台**: macOS (Apple Clang / Homebrew Clang)、Linux、WSL
 - **目标架构**: RISC-V 32-bit (RV32I)
 - **中间表示**: 结构化 LLVM IR (SSA 形式)，具有完整的 Opcode 枚举和类型化指令模型
 - **寄存器分配**: 线性扫描算法
@@ -181,16 +182,36 @@ C 源代码 → 词法分析 → 语法分析 → AST → IRBuilder → ir::Modu
 
 ### 环境要求
 
-- Windows 11 + **WSL 2**（Ubuntu 推荐）
+#### macOS
+
+- macOS 13+ (Ventura 及以上)
+- Xcode Command Line Tools (Apple Clang, 支持 C++20)
+- CMake ≥ 3.16
+- clang（可选，用于汇编对比；系统自带或 Homebrew 均可）
+- 端到端验证额外依赖: spike + riscv-gnu-toolchain (通过 Homebrew)
+
+#### Linux / WSL
+
 - CMake ≥ 3.16 + g++ ≥ 13（C++20）
 - clang（含 RISC-V 后端）
-- qemu-user（RISC-V 用户态模拟器）
+- qemu-user（RISC-V 用户态模拟器，用于 `make verify`）
 - riscv64-unknown-elf-gcc（可选，提供 libgcc 软件除法支持）
 
 ### 安装依赖
 
 ```bash
-# 在 WSL (Ubuntu) 中执行
+# macOS (使用 Homebrew)
+xcode-select --install      # 安装 Xcode Command Line Tools
+brew install cmake           # 安装 CMake
+
+# 端到端验证依赖 (make verify)
+brew tap riscv-software-src/riscv
+brew install riscv-isa-sim riscv-gnu-toolchain
+make setup-spike             # 一键构建 rv32 proxy kernel
+```
+
+```bash
+# Linux / WSL (Ubuntu)
 sudo apt update
 sudo apt install build-essential cmake clang qemu-user
 # 可选：安装 RISC-V 工具链以获取 libgcc
@@ -200,11 +221,11 @@ sudo apt install gcc-riscv64-unknown-elf
 ### 编译项目
 
 ```bash
-# 从 Windows PowerShell 通过 WSL 编译（推荐）
-wsl make
-
-# 或在 WSL 终端中直接执行
+# macOS / Linux / WSL 中执行
 make
+
+# 或从 Windows PowerShell 通过 WSL 调用
+wsl make
 ```
 
 编译完成后，可执行文件位于 `build/toyc` 和 `build/toyc_test`。
@@ -246,9 +267,6 @@ make
 
 # 6. 从 .ll 文件生成汇编（支持 IR 输入）
 ./build/toyc test/ir/01_minimal_toyc.ll --asm
-
-# 以上命令均在 WSL 中执行，也可从 PowerShell 调用：
-# wsl ./build/toyc examples/compiler_inputs/01_minimal.c --ir
 ```
 
 ### Makefile 便捷目标
@@ -265,8 +283,11 @@ make 01_minimal.ll
 
 ## 测试与验证
 
-ToyC 提供四层测试体系——从快速的内置单元测试到完整的 QEMU 端到端验证。
-所有命令均通过 WSL 执行（从 PowerShell 调用时加 `wsl` 前缀）。
+ToyC 提供四层测试体系——从快速的内置单元测试到完整的端到端验证。
+所有功能在 macOS 和 Linux/WSL 上均可运行。
+
+- **Linux/WSL**: 使用 Clang 汇编/链接 + QEMU 用户模式运行
+- **macOS**: 使用 riscv64-unknown-elf-gcc 汇编/链接 + spike + pk (rv32) 运行
 
 ### 1. 内置单元测试
 
@@ -300,19 +321,28 @@ make generate-ir
 # 输出到 test/ir/：<base>_toyc.ll 和 <base>_clang.ll
 ```
 
-### 3. 端到端验证（需 clang + qemu）
+### 3. 端到端验证
 
-对每个测试用例，分别将 ToyC 和 Clang 生成的汇编**链接为 RISC-V ELF** 并在 **QEMU** 中执行，对比两者的退出码和输出，确保 ToyC 生成的代码行为与 Clang 完全一致。
+对每个测试用例，分别将 ToyC 和 Clang 生成的汇编**链接为 RISC-V ELF** 并模拟执行，对比两者的退出码和输出，确保 ToyC 生成的代码行为与 Clang 完全一致。
 
 ```bash
+# macOS 首次使用需先构建 rv32 proxy kernel
+make setup-spike
+
 # 一键验证（自动生成汇编 + 验证，汇编生成过程静默）
 make verify
 ```
 
 验证流程：
 ```
+# Linux/WSL:
 ToyC ASM → Clang 汇编器 → ELF → QEMU 执行 → 退出码 A
-Clang ASM → Clang 汇编器 → ELF → QEMU 执行 → 退出码 B
+
+# macOS:
+ToyC ASM → riscv64-unknown-elf-gcc → ELF → spike + pk 执行 → 退出码 A
+
+# 两种平台均:
+Clang ASM → 同上链接/执行 → 退出码 B
 比较 A == B → ✅ PASS / ❌ FAIL
 ```
 
@@ -334,7 +364,7 @@ make debug FILE=01_minimal.c
 5. 复制产物到 `test/asm/` 和 `test/ir/` 目录
 6. 调用 `verify_output.sh` 执行端到端验证
 
-### 5. 从 Windows PowerShell 调用
+### 5. 从 Windows PowerShell 调用 (WSL)
 
 在 Windows 环境开发时，所有 make 指令通过 `wsl` 前缀调用：
 
@@ -494,12 +524,13 @@ C-SubsetCompilerUsingLLVM/
 │
 ├── include/toyc/                   # 公共头文件（同步自 src/include/）
 │
-├── scripts/                        # 构建和测试脚本（在 WSL 中运行）
+├── scripts/                        # 构建和测试脚本（macOS / Linux / WSL）
 │   ├── crt0.s                      #   RISC-V 启动代码（_start → main → ecall 退出）
 │   ├── generate_asm.sh             #   批量生成 ToyC + Clang 汇编
 │   ├── generate_ir.sh              #   批量生成 ToyC + Clang LLVM IR
-│   ├── verify_output.sh            #   端到端验证（Clang 链接 → QEMU 执行 → 退出码对比）
+│   ├── verify_output.sh            #   端到端验证（macOS: spike+pk, Linux: QEMU）
 │   ├── verify_debug.sh             #   单文件调试模式（输出全部中间产物 + 验证）
+│   ├── setup_spike_rv32.sh         #   (macOS) 一键构建 rv32 proxy kernel
 │   └── test_instr.sh               #   指令测试命令参考
 │
 ├── examples/                       # 测试用例
@@ -518,8 +549,8 @@ C-SubsetCompilerUsingLLVM/
 │
 ├── assets/                         # 文档图片资源
 └── build/                          # 构建产物（自动生成）
-    ├── toyc                        #   编译器主程序 (ELF)
-    └── toyc_test                   #   统一测试程序 (ELF)
+    ├── toyc                        #   编译器主程序 (macOS: Mach-O / Linux: ELF)
+    └── toyc_test                   #   统一测试程序
 ```
 
 ---

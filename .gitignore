@@ -101,3 +101,4 @@ ir/
 packages/
 PLCproject.sln
 HISTORY/
+.DS_Store
