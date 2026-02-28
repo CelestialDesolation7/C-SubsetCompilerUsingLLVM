@@ -7,7 +7,6 @@
 #include "ir.h"
 #include "ir_builder.h"
 #include "ir_parser.h"
-#include "lexer.h"
 #include "parser.h"
 #include "reg_alloc.h"
 #include "riscv_codegen.h"
