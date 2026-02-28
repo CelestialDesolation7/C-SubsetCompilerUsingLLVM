@@ -1,5 +1,6 @@
+#include "ir_builder.h"
 #include <algorithm>
-#include <ir_builder.h>
+
 
 namespace toyc {
 

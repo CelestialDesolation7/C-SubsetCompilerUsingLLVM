@@ -1,4 +1,4 @@
-#include <toyc/lexer.h>
+#include "lexer.h"
 #include <unordered_map>
 
 // 关键字映射表：将标识符字符串映射到对应的 TokenType

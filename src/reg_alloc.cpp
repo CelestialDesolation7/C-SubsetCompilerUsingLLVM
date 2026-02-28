@@ -1,8 +1,9 @@
+#include "reg_alloc.h"
 #include <algorithm>
 #include <climits>
 #include <stack>
-#include <toyc/reg_alloc.h>
 #include <unordered_set>
+
 
 namespace toyc {
 

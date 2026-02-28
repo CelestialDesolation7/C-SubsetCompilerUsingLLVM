@@ -1,8 +1,9 @@
+#include "ir_parser.h"
 #include <algorithm>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
-#include <toyc/ir_parser.h>
+
 
 namespace toyc {
 

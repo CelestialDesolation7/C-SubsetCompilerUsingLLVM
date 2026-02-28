@@ -2,14 +2,14 @@
 // 支持两种输入：.c/.tc（ToyC 源码）和 .ll（LLVM IR 文本）
 // 输出模式：--ast / --ir / --asm / --all（默认输出汇编）
 
-#include <toyc/ast.h>
-#include <toyc/ir.h>
-#include <toyc/ir_builder.h>
-#include <toyc/ir_parser.h>
-#include <toyc/lexer.h>
-#include <toyc/parser.h>
-#include <toyc/reg_alloc.h>
-#include <toyc/riscv_codegen.h>
+#include "ast.h"
+#include "ir.h"
+#include "ir_builder.h"
+#include "ir_parser.h"
+#include "lexer.h"
+#include "parser.h"
+#include "reg_alloc.h"
+#include "riscv_codegen.h"
 
 #include <cstring>
 #include <fstream>

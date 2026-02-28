@@ -22,7 +22,6 @@ set(LIB_SOURCES
 
 # 静态库
 add_library(toyc_lib STATIC ${LIB_SOURCES})
-target_include_directories(toyc_lib PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
 # 主可执行文件
 add_executable(toyc src/main.cpp)

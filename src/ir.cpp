@@ -1,7 +1,8 @@
+#include "ir.h"
 #include <algorithm>
 #include <sstream>
 #include <stdexcept>
-#include <toyc/ir.h>
+
 
 namespace toyc {
 namespace ir {

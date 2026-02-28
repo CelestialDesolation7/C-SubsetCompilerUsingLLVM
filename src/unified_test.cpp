@@ -3,14 +3,14 @@
 //   解析 → AST → IR 用生成 → IR round-trip → 寄存器分配 → 代码生成
 // 任一阶段失败则报告 FAIL，全部通过则返回 0
 
-#include <toyc/ast.h>
-#include <toyc/ir.h>
-#include <toyc/ir_builder.h>
-#include <toyc/ir_parser.h>
-#include <toyc/lexer.h>
-#include <toyc/parser.h>
-#include <toyc/reg_alloc.h>
-#include <toyc/riscv_codegen.h>
+#include "ast.h"
+#include "ir.h"
+#include "ir_builder.h"
+#include "ir_parser.h"
+#include "lexer.h"
+#include "parser.h"
+#include "reg_alloc.h"
+#include "riscv_codegen.h"
 
 #include <filesystem>
 #include <fstream>

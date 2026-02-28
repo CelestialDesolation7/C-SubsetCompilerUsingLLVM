@@ -1,4 +1,4 @@
-#include <toyc/parser.h>
+#include "parser.h"
 
 // 构造函数：初始化词法分析器并预读两个 Token 到 cur 和 nxt
 Parser::Parser(const std::string &source) : lex(source) {
